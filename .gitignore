@@ -1,0 +1,23 @@
+.env
+.env.*
+!.env.example
+
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+node_modules/
+
+*.log
+.DS_Store
+
+# generated Twine exports (kept locally, not versioned)
+exports/
+
+# pre-generated demo run artifacts and the assembled demo video — large
+# binaries, regenerable from a real run via scripts/save_demo_run.py, not
+# meant to live in git history. The final stratum_demo.mp4 gets uploaded
+# separately for the hackathon submission.
+demo_recordings/

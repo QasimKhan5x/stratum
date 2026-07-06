@@ -1,0 +1,309 @@
+/* Stratum — cyanotype / ink-wash visual register.
+   Deep indigo blueprint background, pale cyan/off-white ink, amber
+   reserved exclusively for "contested" states (see world_bible status). */
+
+:root {
+  --ink-deep: #0b1b33;
+  --ink-mid: #122a4d;
+  --ink-line: #1c3a66;
+  --cyan-pale: #d8ecf2;
+  --cyan-bright: #9fd8e8;
+  --amber: #e0a94b;
+  --amber-glow: rgba(224, 169, 75, 0.35);
+  --font-stack: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(circle at 20% 0%, var(--ink-mid), var(--ink-deep) 70%);
+  color: var(--cyan-pale);
+  font-family: var(--font-stack);
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--ink-line);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent);
+}
+
+.topbar h1 {
+  margin: 0;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 1.1rem;
+  color: var(--cyan-bright);
+}
+
+.status-pill {
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  border: 1px solid var(--ink-line);
+}
+
+.status-pill--pending {
+  color: var(--cyan-pale);
+  opacity: 0.6;
+}
+
+.status-pill--ok {
+  color: var(--ink-deep);
+  background: var(--cyan-bright);
+  border-color: var(--cyan-bright);
+}
+
+.status-pill--error {
+  color: var(--ink-deep);
+  background: var(--amber);
+  border-color: var(--amber);
+}
+
+.layout {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1px;
+  background: var(--ink-line);
+}
+
+.map-panel,
+.debate-panel {
+  background: var(--ink-deep);
+  padding: 1.25rem;
+  min-height: 60vh;
+}
+
+#hex-map {
+  height: 100%;
+  min-height: 55vh;
+  border: 1px dashed var(--ink-line);
+  border-radius: 4px;
+  background-image: linear-gradient(var(--ink-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--ink-line) 1px, transparent 1px);
+  background-size: 24px 24px;
+  opacity: 0.9;
+}
+
+#hex-map svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.hex-cell {
+  cursor: default;
+}
+
+.hex-cell__poly {
+  stroke-width: 1.5px;
+  transition: fill 0.4s ease, stroke 0.4s ease;
+}
+
+.hex-cell--canon .hex-cell__poly {
+  fill: rgba(159, 216, 232, 0.18);
+  stroke: var(--cyan-bright);
+}
+
+.hex-cell--contested .hex-cell__poly {
+  fill: var(--amber-glow);
+  stroke: var(--amber);
+  filter: drop-shadow(0 0 6px var(--amber-glow));
+}
+
+.hex-cell__label {
+  fill: var(--cyan-pale);
+  font-size: 8px;
+  font-family: var(--font-stack);
+  pointer-events: none;
+  /* stroke-first paint order gives the text a cutout look, keeping it
+     legible over both the flat status colors and generated hex images. */
+  paint-order: stroke;
+  stroke: var(--ink-deep);
+  stroke-width: 2.5px;
+}
+
+.hex-cell title {
+  white-space: pre-wrap;
+}
+
+.baseline-panel {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px dashed var(--ink-line);
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+.baseline-panel h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cyan-bright);
+}
+
+.metrics-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.75rem;
+  margin: 0.75rem 0 0;
+  font-size: 0.8rem;
+}
+
+.metrics-list dt {
+  color: var(--cyan-bright);
+  opacity: 0.8;
+}
+
+.metrics-list dd {
+  margin: 0;
+}
+
+.debate-panel h2 {
+  margin-top: 0;
+  font-size: 0.85rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--cyan-bright);
+  border-bottom: 1px solid var(--ink-line);
+  padding-bottom: 0.5rem;
+}
+
+#debate-log {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--cyan-pale);
+  opacity: 0.95;
+  max-height: 65vh;
+  overflow-y: auto;
+}
+
+.debate-entry {
+  padding: 0.4rem 0.6rem;
+  border-left: 2px solid var(--ink-line);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 0 3px 3px 0;
+}
+
+.debate-entry__meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.65;
+  margin-bottom: 0.15rem;
+}
+
+.debate-entry__body {
+  line-height: 1.35;
+}
+
+.debate-entry--proposal { border-left-color: var(--cyan-bright); }
+.debate-entry--critique { border-left-color: #d8756b; }
+.debate-entry--judge_score { border-left-color: #8a8fa3; opacity: 0.8; }
+.debate-entry--synthesis { border-left-color: var(--amber); }
+.debate-entry--admission_result--true { border-left-color: #79c26a; }
+.debate-entry--admission_result--false { border-left-color: #d8756b; }
+.debate-entry--seed_entry { border-left-color: #c9a7e8; }
+.debate-entry--human_injection { border-left-color: var(--amber); background: var(--amber-glow); }
+.debate-entry--baseline_ready { border-left-color: #8a8fa3; }
+.debate-entry--scene_failed { border-left-color: var(--amber); background: rgba(224, 169, 75, 0.08); }
+.debate-entry--run_complete { border-left-color: var(--cyan-bright); font-weight: bold; }
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--ink-line);
+  background: linear-gradient(0deg, rgba(255, 255, 255, 0.03), transparent);
+}
+
+.controls__group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.controls__group label,
+.controls__group span {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cyan-bright);
+  opacity: 0.8;
+}
+
+.controls__group input {
+  min-width: 16rem;
+  padding: 0.4rem 0.6rem;
+  background: var(--ink-mid);
+  border: 1px solid var(--ink-line);
+  border-radius: 3px;
+  color: var(--cyan-pale);
+  font-family: inherit;
+}
+
+.controls__group input:focus {
+  outline: none;
+  border-color: var(--cyan-bright);
+  box-shadow: 0 0 0 2px rgba(159, 216, 232, 0.2);
+}
+
+.controls__group button {
+  padding: 0.4rem 0.9rem;
+  background: transparent;
+  border: 1px solid var(--cyan-bright);
+  border-radius: 3px;
+  color: var(--cyan-bright);
+  cursor: pointer;
+  font-family: inherit;
+  letter-spacing: 0.05em;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.controls__group button:hover {
+  background: var(--cyan-bright);
+  color: var(--ink-deep);
+}
+
+.controls__group--export button {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.controls__group--export button:hover {
+  background: var(--amber);
+  color: var(--ink-deep);
+  box-shadow: 0 0 12px var(--amber-glow);
+}
+
+/* Reserved for map hexes / world-bible entries with status "contested". */
+.contested {
+  color: var(--amber);
+  filter: drop-shadow(0 0 6px var(--amber-glow));
+}
+
+@media (max-width: 800px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}

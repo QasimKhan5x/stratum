@@ -1,0 +1,13 @@
+{
+  "name": "stratum-e2e",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Playwright test tooling for Stratum's frontend (not app code).",
+  "scripts": {
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
+    "@playwright/test": "^1.61.1"
+  }
+}

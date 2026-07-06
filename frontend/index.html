@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stratum</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>Stratum</h1>
+    <span id="run-status" class="status-pill status-pill--pending">no run yet</span>
+    <span id="connection-status" class="status-pill status-pill--pending">connecting&hellip;</span>
+  </header>
+
+  <main class="layout">
+    <section class="map-panel">
+      <div id="hex-map"></div>
+      <div id="baseline-panel" class="baseline-panel" hidden>
+        <h3>Baseline (single-shot, no negotiation)</h3>
+        <p id="baseline-text"></p>
+        <dl id="metrics-list" class="metrics-list"></dl>
+      </div>
+    </section>
+
+    <aside class="debate-panel">
+      <h2>Debate</h2>
+      <div id="debate-log"></div>
+    </aside>
+  </main>
+
+  <footer class="controls">
+    <form id="premise-form" class="controls__group">
+      <label for="premise-input">Premise</label>
+      <input id="premise-input" type="text" placeholder="Describe the world to negotiate into existence&hellip;" />
+      <button type="submit">Generate</button>
+    </form>
+
+    <form id="constraint-form" class="controls__group">
+      <label for="constraint-input">Inject constraint</label>
+      <input id="constraint-input" type="text" placeholder="e.g. the cartographer is blind" />
+      <button type="submit">Inject</button>
+    </form>
+
+    <div class="controls__group controls__group--export">
+      <span>Export</span>
+      <button id="export-twee" type="button">.twee</button>
+      <button id="export-html" type="button">open in Twine</button>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
