@@ -1093,6 +1093,9 @@ function renderMetricsList() {
     return;
   }
   for (const [name, values] of Object.entries(state.metrics)) {
+    // contradiction_detail is per-paragraph evidence, not a {stratum, baseline}
+    // scalar pair — it's already surfaced via renderBaselineText's inline flags.
+    if (name === "contradiction_detail") continue;
     const row = document.createElement("div");
     row.className = "metric-row";
     const dt = document.createElement("dt");
