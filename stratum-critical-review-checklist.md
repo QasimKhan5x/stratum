@@ -169,3 +169,23 @@ quality, real-world relevance) — not a re-run of the earlier audits. Same no-s
     confirmed `/api/world` returned it, restarted the live `stratum.service`, confirmed the identical
     data (and `/api/stream` replay) still worked afterward — real production proof the SQLite file
     survives a genuine restart. 38/38 tests passing.
+- **2026-07-07 (fifth session — Devpost check + public-repo gap)**: Checked the live
+  `qwencloud-hackathon.devpost.com` submission page directly (not just the earlier local notes):
+  confirmed demo video is ~3 minutes, must be hosted publicly on YouTube/Vimeo/Facebook Video (not
+  just an attached file), and a **separate** short recording is required specifically as proof of
+  Alibaba Cloud deployment. Found a real blocker: the public GitHub repo (`QasimKhan5x/stratum`,
+  confirmed public with a detected MIT license) was last pushed **before** essentially all of this
+  checklist's work — 36 changed/new files sat locally on a feature branch, never merged to `main`.
+  Also found, while preparing to push: now that the real Tablestore instance is live again (user
+  re-enabled it), `tests/test_metrics.py` and `tests/test_sqlite_store.py` (both call
+  `backend.runs.create_run()`) started silently hitting real Tablestore instead of the SQLite tier
+  they meant to test, because `make_world_bible()`'s factory tries Tablestore first — a real,
+  previously-latent test-isolation bug only exposed once Tablestore stopped failing. Fixed with a new
+  `tests/conftest.py` autouse fixture that forces the factory off Tablestore for the whole suite by
+  default (`tests/test_cloud_storage.py`'s Tablestore-specific tests are unaffected — they construct
+  `TablestoreWorldBible` directly against a fake client, not through this factory). Merged
+  `origin/main` in (no real conflicts — main's only prior change was a byte-identical LICENSE
+  normalization), committed everything (37 files), and pushed directly to `main` on the user's
+  explicit instruction. Verified via the GitHub API that `main` now points at the new commit. Demo
+  video (v4, to replace the stale v1-v3 which predate the map/disagreement/contradiction-highlighting
+  work) queued to be produced once the in-flight P2/P5-3 background jobs finish.
