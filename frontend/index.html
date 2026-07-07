@@ -3,50 +3,131 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Stratum</title>
+  <title>Stratum — multi-agent world negotiation</title>
   <link rel="stylesheet" href="style.css" />
   <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 </head>
 <body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
   <header class="topbar">
-    <h1>Stratum</h1>
-    <span id="run-status" class="status-pill status-pill--pending">no run yet</span>
-    <span id="connection-status" class="status-pill status-pill--pending">connecting&hellip;</span>
+    <div class="topbar__brand">
+      <span class="topbar__mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 2 2 7l10 5 10-5-10-5Z" fill="currentColor" opacity=".9"/><path d="M2 12l10 5 10-5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M2 17l10 5 10-5" fill="none" stroke="currentColor" stroke-width="1.6" opacity=".55"/></svg>
+      </span>
+      <div class="topbar__title">
+        <h1>Stratum</h1>
+        <p class="topbar__subtitle">catches contradictions · negotiates fixes · exports Twine drafts</p>
+      </div>
+    </div>
+
+    <div class="topbar__status" role="status">
+      <span id="run-status" class="status-pill status-pill--pending">no run yet</span>
+      <span id="connection-status" class="status-pill status-pill--pending">connecting&hellip;</span>
+    </div>
   </header>
 
-  <main class="layout">
-    <section class="map-panel">
-      <div id="hex-map"></div>
+  <nav class="roster" aria-label="Negotiation agents">
+    <ol id="roster-list" class="roster__list"></ol>
+  </nav>
+
+  <section class="promise-strip" aria-label="What Stratum does">
+    <strong>Stratum catches contradictions, negotiates fixes, and exports a playable Twine draft.</strong>
+    <span>Watch the gate reject conflicts, specialists revise, judges score, and the final canon download as `.twee` for Twine import.</span>
+  </section>
+
+  <div class="sr-only" id="live-announcer" role="status" aria-live="polite"></div>
+
+  <main id="main" class="layout">
+    <section class="map-panel" aria-labelledby="map-heading">
+      <div class="panel-head">
+        <h2 id="map-heading">World map</h2>
+        <ul class="map-legend" aria-label="Tile status legend">
+          <li><span class="map-legend__swatch map-legend__swatch--canon"></span>canon</li>
+          <li><span class="map-legend__swatch map-legend__swatch--contested"></span>contested</li>
+          <li><span class="map-legend__swatch map-legend__swatch--fog"></span>unrevealed</li>
+        </ul>
+      </div>
+
+      <div id="gate-banner" class="gate-banner" hidden role="alert">
+        <span class="gate-banner__icon" aria-hidden="true"></span>
+        <div class="gate-banner__text">
+          <strong id="gate-banner-title"></strong>
+          <span id="gate-banner-detail"></span>
+        </div>
+      </div>
+
+      <div id="hex-map" class="hex-map"></div>
+      <div id="hex-tooltip" class="hex-tooltip" hidden></div>
+
+      <section id="canon-ledger" class="canon-ledger" aria-labelledby="canon-ledger-heading">
+        <div class="panel-head">
+          <h3 id="canon-ledger-heading">Canon evolution</h3>
+          <span id="canon-ledger-count" class="canon-ledger__count">0 admitted</span>
+        </div>
+        <ol id="canon-ledger-list" class="canon-ledger__list" aria-label="Admitted world entries">
+          <li class="canon-ledger__empty">Admitted scenes will accumulate here.</li>
+        </ol>
+      </section>
+
       <div id="baseline-panel" class="baseline-panel" hidden>
-        <h3>Baseline (single-shot, no negotiation)</h3>
-        <p id="baseline-text"></p>
+        <div class="panel-head">
+          <h3>Baseline comparison</h3>
+          <span class="baseline-panel__caption">single-shot · no negotiation</span>
+        </div>
+        <p id="baseline-text" class="baseline-panel__text"></p>
         <dl id="metrics-list" class="metrics-list"></dl>
       </div>
+
+      <section id="judge-scorecard" class="scorecard-panel" hidden aria-labelledby="scorecard-heading">
+        <div class="panel-head">
+          <h3 id="scorecard-heading">Judging scorecard</h3>
+          <span class="baseline-panel__caption">why judges should care</span>
+        </div>
+        <div id="scorecard-list" class="scorecard-list"></div>
+        <p id="twine-help" class="twine-help">Primary export: download `.twee`, then import it into Twine to continue or publish the playable draft.</p>
+        <button id="scorecard-export-twee" type="button" class="btn btn--amber btn--small">Export playable Twee</button>
+      </section>
     </section>
 
-    <aside class="debate-panel">
-      <h2>Debate</h2>
-      <div id="debate-log"></div>
+    <aside class="debate-panel" aria-labelledby="debate-heading">
+      <div class="panel-head">
+        <h2 id="debate-heading">Negotiation feed</h2>
+        <span id="scene-indicator" class="scene-indicator">—</span>
+      </div>
+      <section class="timeline-panel" aria-labelledby="timeline-heading">
+        <div class="timeline-panel__head">
+          <h3 id="timeline-heading">Agent timeline</h3>
+          <button id="jump-gate-catch" type="button" class="btn btn--tiny" hidden>Jump to gate catch</button>
+        </div>
+        <p class="timeline-legend" aria-label="Timeline abbreviation legend">
+          LO Lorekeeper · PR Provocateur · HA Harmonist · AR Architect · AB Arbiter · JG Judges · GT Gate
+        </p>
+        <div id="agent-timeline" class="agent-timeline" aria-label="Agent participation by scene">
+          <p class="agent-timeline__empty">Waiting for negotiation events.</p>
+        </div>
+      </section>
+      <div id="debate-log" class="debate-log"></div>
     </aside>
   </main>
 
   <footer class="controls">
-    <form id="premise-form" class="controls__group">
+    <form id="premise-form" class="controls__group controls__group--primary">
       <label for="premise-input">Premise</label>
-      <input id="premise-input" type="text" placeholder="Describe the world to negotiate into existence&hellip;" />
-      <button type="submit">Generate</button>
+      <input id="premise-input" type="text" placeholder="Describe the world to negotiate into existence&hellip;" autocomplete="off" />
+      <button type="submit" class="btn btn--primary">Generate</button>
     </form>
 
     <form id="constraint-form" class="controls__group">
       <label for="constraint-input">Inject constraint</label>
-      <input id="constraint-input" type="text" placeholder="e.g. the cartographer is blind" />
-      <button type="submit">Inject</button>
+      <input id="constraint-input" type="text" placeholder="e.g. the cartographer is blind" autocomplete="off" />
+      <button type="submit" class="btn btn--ghost">Inject</button>
     </form>
 
     <div class="controls__group controls__group--export">
-      <span>Export</span>
-      <button id="export-twee" type="button">.twee</button>
-      <button id="export-html" type="button">open in Twine</button>
+      <span class="controls__label">Export</span>
+      <button id="export-twee" type="button" class="btn btn--amber">Download .twee</button>
+      <button id="export-html" type="button" class="btn btn--amber">Open Twine website</button>
     </div>
   </footer>
 

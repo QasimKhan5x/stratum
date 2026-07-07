@@ -1,9 +1,9 @@
 """The Arbiter: synthesizes one final scene from the round's debate.
 
 Per stratum-architecture-plan.md, the Arbiter runs on the "arbiter" model
-role (qwen3.7-max, thinking on) — deep reasoning matters most here, since
-this is the final multi-objective synthesis step. Thinking tokens are
-intended to stream to the debate panel live.
+role (qwen3.7-max) for the final multi-objective synthesis step. The call
+uses structured JSON, so DashScope thinking mode is intentionally disabled
+by backend.models_client.chat_json.
 """
 
 from __future__ import annotations

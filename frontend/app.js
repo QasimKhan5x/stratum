@@ -21,7 +21,79 @@ const state = {
   // the run's *current* (i.e. final, for a finished run) state regardless
   // of how far the paced event replay has actually gotten.
   maxRoundSeen: 0,
+  retryScenes: new Set(),
+  scenePhases: new Map(),
+  currentScene: null,
+  lastLoggedScene: null,
+  gateBannerTimer: null,
+  timelineScenes: new Map(),
+  canonEntries: new Map(),
+  gateCatchEntry: null,
+  gateCatchSummary: null,
+  metrics: null,
+  baselineReady: false,
+  runComplete: false,
 };
+
+const AGENTS = {
+  LOREKEEPER: { name: "Lorekeeper", short: "LO", color: "var(--agent-lorekeeper)", roster: true },
+  PROVOCATEUR: { name: "Provocateur", short: "PR", color: "var(--agent-provocateur)", roster: true },
+  HARMONIST: { name: "Harmonist", short: "HA", color: "var(--agent-harmonist)", roster: true },
+  ARCHITECT: { name: "Architect", short: "AR", color: "var(--agent-architect)", roster: true },
+  ARBITER: { name: "Arbiter", short: "AB", color: "var(--agent-arbiter)", roster: true },
+  JUDGES: { name: "Judges", short: "JG", color: "var(--agent-judge)", roster: true },
+  GATE: { name: "Gate", short: "GT", color: "var(--agent-gate)", roster: true },
+  HUMAN: { name: "Human", short: "HU", color: "var(--agent-human)" },
+  SEED: { name: "Seed", short: "SE", color: "var(--agent-seed)" },
+  BASELINE: { name: "Baseline", short: "BL", color: "var(--agent-baseline)" },
+};
+
+const PHASE_BY_EVENT = {
+  proposal: "Proposing",
+  critique: "Critiquing",
+  judge_score: "Judging",
+  synthesis: "Synthesizing",
+  admission_result: "Admission",
+};
+
+const TIMELINE_PHASES = [
+  ["proposal", "Propose"],
+  ["critique", "Critique"],
+  ["judge_score", "Judge"],
+  ["synthesis", "Synthesize"],
+  ["admission_result", "Gate"],
+];
+
+const EVENT_STAGE = Object.fromEntries(TIMELINE_PHASES);
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function domIdPart(value) {
+  return String(value ?? "unknown").replace(/[^a-zA-Z0-9_-]/g, "-");
+}
+
+function agentKey(agent, eventType) {
+  const raw = String(agent || "").toUpperCase();
+  if (AGENTS[raw]) return raw;
+  if (raw.startsWith("JUDGE") || eventType === "judge_score") return "JUDGES";
+  if (eventType === "admission_result") return "GATE";
+  if (eventType === "baseline_ready") return "BASELINE";
+  if (eventType === "human_injection") return "HUMAN";
+  if (eventType === "seed_entry") return "SEED";
+  return raw || "GATE";
+}
+
+function agentMeta(agent, eventType) {
+  const key = agentKey(agent, eventType);
+  return AGENTS[key] || { name: agent || "System", short: (agent || "SY").slice(0, 2), color: "var(--text-tertiary)" };
+}
 
 async function checkConnection() {
   const statusEl = document.getElementById("connection-status");
@@ -68,9 +140,46 @@ function hexPoints(cx, cy, size) {
   }).join(" ");
 }
 
+function shortHexLabel(entry) {
+  const round = entry.provenance_round ?? "?";
+  const glyph = entry.status === "canon" ? "◆" : entry.status === "rejected" ? "×" : "!";
+  return `${glyph}${round}`;
+}
+
+function tooltipHtml(entry) {
+  const title = entry.full_text?.split("\n")[0] || entry.summary || "Untitled scene";
+  return `
+    <div class="hex-tooltip__meta" style="--agent-color: ${agentMeta(entry.provenance_agent).color}">
+      ${escapeHtml(entry.provenance_agent)} · round ${escapeHtml(entry.provenance_round)} · ${escapeHtml(entry.status)}
+    </div>
+    <strong>${escapeHtml(title)}</strong>
+    <div class="hex-tooltip__summary">${escapeHtml(entry.summary)}</div>
+  `;
+}
+
+function showHexTooltip(event, entry) {
+  const tooltip = document.getElementById("hex-tooltip");
+  const panel = document.querySelector(".map-panel");
+  if (!tooltip || !panel) return;
+  const panelRect = panel.getBoundingClientRect();
+  const sourceRect = event.currentTarget.getBoundingClientRect();
+  const x = sourceRect.left + sourceRect.width / 2 - panelRect.left;
+  const y = sourceRect.top - panelRect.top;
+  tooltip.innerHTML = tooltipHtml(entry);
+  tooltip.hidden = false;
+  tooltip.style.left = `${Math.max(12, Math.min(x + 12, panelRect.width - 280))}px`;
+  tooltip.style.top = `${Math.max(12, y + 12)}px`;
+}
+
+function hideHexTooltip() {
+  const tooltip = document.getElementById("hex-tooltip");
+  if (tooltip) tooltip.hidden = true;
+}
+
 function renderHexMap(entries) {
   const container = d3.select("#hex-map");
   container.selectAll("svg").remove();
+  hideHexTooltip();
 
   const positioned = entries.filter((e) => Array.isArray(e.grid_position));
   if (positioned.length === 0) return;
@@ -82,7 +191,10 @@ function renderHexMap(entries) {
     .selectAll("g.hex-cell")
     .data(positioned, (d) => d.id)
     .join("g")
-    .attr("class", (d) => `hex-cell hex-cell--${d.status}`);
+    .attr("class", (d) => `hex-cell hex-cell--${d.status}`)
+    .attr("tabindex", "0")
+    .attr("role", "button")
+    .attr("aria-label", (d) => `${d.status} scene, round ${d.provenance_round}: ${d.summary}`);
 
   cells.each(function (d) {
     const g = d3.select(this);
@@ -125,49 +237,17 @@ function renderHexMap(entries) {
       g.append("polygon").attr("class", "hex-cell__poly").attr("points", points);
     }
 
-    g.append("title").text(
-      `[${d.provenance_agent} · round ${d.provenance_round} · ${d.status}]\n${d.summary}`
-    );
+    g.append("title").text(`[${d.provenance_agent} · round ${d.provenance_round} · ${d.status}]\n${d.summary}`);
 
-    // A single unwrapped line routinely overran the hex width and bled into
-    // neighbors on dense clusters, so this wraps into up to 3 short lines
-    // that actually fit — dominant-baseline is unreliable across browsers
-    // for multi-line <text>, hence the manual per-tspan y offset instead.
-    const lines = wrapLabel(d.summary);
-    const lineHeight = 10;
-    const startY = cy - ((lines.length - 1) * lineHeight) / 2;
-    const label = g.append("text").attr("class", "hex-cell__label").attr("text-anchor", "middle");
-    lines.forEach((line, i) => {
-      label
-        .append("tspan")
-        .attr("x", cx)
-        .attr("y", startY + i * lineHeight)
-        .text(line);
-    });
+    g.append("text")
+      .attr("class", "hex-cell__label")
+      .attr("text-anchor", "middle")
+      .attr("x", cx)
+      .attr("y", cy + 4)
+      .text(shortHexLabel(d));
+
+    g.on("mouseenter focus", (event) => showHexTooltip(event, d)).on("mouseleave blur", hideHexTooltip);
   });
-}
-
-function wrapLabel(summary, maxLines = 3, maxCharsPerLine = 14) {
-  const words = summary.split(" ");
-  const lines = [];
-  let current = "";
-  let consumedWords = 0;
-  for (const word of words) {
-    if (lines.length === maxLines) break;
-    const candidate = current ? `${current} ${word}` : word;
-    if (candidate.length > maxCharsPerLine && current) {
-      lines.push(current);
-      current = word;
-    } else {
-      current = candidate;
-    }
-    consumedWords += 1;
-  }
-  if (lines.length < maxLines && current) lines.push(current);
-  if (consumedWords < words.length) {
-    lines[lines.length - 1] = `${lines[lines.length - 1]}…`;
-  }
-  return lines;
 }
 
 async function refreshWorld() {
@@ -180,20 +260,284 @@ async function refreshWorld() {
 
 // --- Debate log -----------------------------------------------------------
 
-function appendDebateEntry(eventType, agent, bodyHtml, modifierClass) {
+function initRoster() {
+  const list = document.getElementById("roster-list");
+  if (!list) return;
+  list.innerHTML = "";
+  Object.entries(AGENTS)
+    .filter(([, meta]) => meta.roster)
+    .forEach(([key, meta]) => {
+      const chip = document.createElement("li");
+      chip.className = `roster-chip roster-chip--${key.toLowerCase()}`;
+      chip.dataset.agent = key;
+      chip.style.setProperty("--agent-color", meta.color);
+      chip.innerHTML = `
+        <span class="roster-chip__avatar" aria-hidden="true">${escapeHtml(meta.short)}</span>
+        <span class="roster-chip__meta">
+          <span class="roster-chip__name">${escapeHtml(meta.name)}</span>
+          <span class="roster-chip__role">idle</span>
+        </span>
+      `;
+      list.appendChild(chip);
+    });
+}
+
+function setRosterStatus(agent, status, modifier) {
+  const key = agentKey(agent);
+  const chip = document.querySelector(`[data-agent="${key}"]`);
+  if (!chip) return;
+  document.querySelectorAll(".roster-chip--active").forEach((el) => el.classList.remove("roster-chip--active"));
+  chip.classList.remove("roster-chip--reject", "roster-chip--admit");
+  if (modifier) chip.classList.add(`roster-chip--${modifier}`);
+  chip.classList.add("roster-chip--active");
+  const role = chip.querySelector(".roster-chip__role");
+  if (role) role.textContent = status;
+}
+
+function finishRoster(status) {
+  document.querySelectorAll(".roster-chip").forEach((chip) => {
+    chip.classList.remove("roster-chip--active", "roster-chip--reject", "roster-chip--admit");
+    const role = chip.querySelector(".roster-chip__role");
+    if (role) role.textContent = status;
+  });
+}
+
+function updateRosterForEvent(eventType, payload, agent) {
+  const byType = {
+    seed_entry: ["GATE", "seeded"],
+    proposal: [payload.role || agent, "proposing"],
+    critique: [payload.critic_role || agent, "critiquing"],
+    judge_score: ["JUDGES", "judging"],
+    synthesis: ["ARBITER", "synthesizing"],
+    admission_result: ["GATE", payload.admitted ? "admitted" : "rejected", payload.admitted ? "admit" : "reject"],
+    human_injection: ["HUMAN", "injected"],
+    baseline_ready: ["JUDGES", "scored"],
+    scene_failed: ["ARBITER", "failed"],
+    image_ready: ["GATE", "illustrated"],
+    run_complete: ["ARBITER", payload.status === "done" ? "complete" : "failed"],
+  }[eventType];
+  if (byType) setRosterStatus(...byType);
+}
+
+function updateSceneIndicator(eventType, scene) {
+  if (!scene && scene !== 0) return;
+  state.currentScene = scene;
+  const phase = PHASE_BY_EVENT[eventType];
+  if (phase) {
+    const phases = state.scenePhases.get(scene) || [];
+    if (!phases.includes(phase)) phases.push(phase);
+    state.scenePhases.set(scene, phases);
+  }
+  const el = document.getElementById("scene-indicator");
+  if (!el) return;
+  const phases = state.scenePhases.get(scene) || [];
+  el.textContent = phases.length ? `Scene ${scene} · ${phases.join(" → ")}` : `Scene ${scene}`;
+}
+
+function finishSceneIndicator(status) {
+  const el = document.getElementById("scene-indicator");
+  if (!el) return;
+  const scenes = Array.from(state.timelineScenes.keys()).filter((scene) => scene || scene === 0);
+  const finalScene = scenes.length ? Math.max(...scenes) : state.currentScene;
+  const prefix = finalScene || finalScene === 0 ? `Scene ${finalScene}` : "Replay";
+  el.textContent = status === "done" ? `${prefix} · Complete` : `${prefix} · Failed`;
+}
+
+function phaseTone(eventType, payload = {}) {
+  if (eventType === "admission_result") return payload.admitted ? "admit" : "reject";
+  if (eventType === "scene_failed") return "reject";
+  if (eventType === "image_ready") return "image";
+  return "active";
+}
+
+function trackTimelineEvent(eventType, payload = {}, meta = {}) {
+  const scene = meta.scene;
+  if (!scene && scene !== 0) return;
+  const agent = agentKey(meta.agent || payload.role || payload.critic_role, eventType);
+  const sceneState = state.timelineScenes.get(scene) || { events: [], retry: false, resolved: false };
+  if (eventType === "admission_result" && !payload.admitted) sceneState.retry = true;
+  if (eventType === "admission_result" && payload.admitted) sceneState.resolved = true;
+  sceneState.events.push({
+    type: eventType,
+    agent,
+    stage: EVENT_STAGE[eventType] || eventType.replace(/_/g, " "),
+    tone: phaseTone(eventType, payload),
+  });
+  state.timelineScenes.set(scene, sceneState);
+  renderTimeline();
+}
+
+function renderTimeline() {
+  const timeline = document.getElementById("agent-timeline");
+  if (!timeline) return;
+  if (state.timelineScenes.size === 0) {
+    timeline.innerHTML = '<p class="agent-timeline__empty">Waiting for negotiation events.</p>';
+    return;
+  }
+
+  // ponytail: timeline is client event-order only; upgrade path is backend
+  // attempt IDs/timestamps if cross-tab replay fidelity becomes important.
+  timeline.innerHTML = Array.from(state.timelineScenes.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([scene, sceneState]) => {
+      const cells = sceneState.events
+        .slice(-18)
+        .map((event) => {
+          const meta = agentMeta(event.agent, event.type);
+          return `
+            <span
+              class="agent-timeline__cell agent-timeline__cell--${escapeHtml(event.tone)}"
+              style="--agent-color: ${meta.color}"
+              title="${escapeHtml(meta.name)} · ${escapeHtml(event.stage)}"
+              aria-label="${escapeHtml(meta.name)} ${escapeHtml(event.stage)}"
+            >${escapeHtml(meta.short)}</span>
+          `;
+        })
+        .join("");
+      const status = sceneState.retry
+        ? sceneState.resolved
+          ? "caught → resolved"
+          : "gate catch"
+        : sceneState.resolved
+          ? "admitted"
+          : "negotiating";
+      return `
+        <div class="agent-timeline__row">
+          <div class="agent-timeline__scene">
+            <strong>Scene ${escapeHtml(scene)}</strong>
+            <span>${escapeHtml(status)}</span>
+          </div>
+          <div class="agent-timeline__cells">${cells}</div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function entryTitle(entry) {
+  return entry.summary || entry.full_text?.split("\n")[0] || entry.id || "Untitled entry";
+}
+
+function rememberCanonEntry(entry, source = "admitted") {
+  if (!entry?.id) return;
+  state.canonEntries.set(entry.id, { ...state.canonEntries.get(entry.id), ...entry, ledger_source: source });
+  renderCanonLedger();
+  renderScorecard();
+}
+
+function markCanonImage(entryId, imageUrl) {
+  if (!entryId) return;
+  const existing = state.canonEntries.get(entryId);
+  if (!existing) return;
+  state.canonEntries.set(entryId, { ...existing, image_url: imageUrl || existing.image_url });
+  renderCanonLedger();
+  renderScorecard();
+}
+
+async function refreshCanonEntry(entryId, attempts = 3) {
+  if (!state.runId || !entryId) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/world/${state.runId}`);
+    if (!res.ok) return;
+    const body = await res.json();
+    const match = body.entries.find((entry) => entry.id === entryId);
+    if (match) rememberCanonEntry(match);
+  } catch (err) {
+    console.error("Failed to refresh canon entry:", err);
+  }
+  if (attempts > 1 && !state.canonEntries.has(entryId)) {
+    window.setTimeout(() => refreshCanonEntry(entryId, attempts - 1), 250);
+  }
+}
+
+function renderCanonLedger() {
+  const list = document.getElementById("canon-ledger-list");
+  const count = document.getElementById("canon-ledger-count");
+  if (!list || !count) return;
+  const entries = Array.from(state.canonEntries.values())
+    .filter((entry) => entry.status === "canon")
+    .sort((a, b) => (a.provenance_round ?? 0) - (b.provenance_round ?? 0));
+  count.textContent = `${entries.length} admitted`;
+  if (entries.length === 0) {
+    list.innerHTML = '<li class="canon-ledger__empty">Admitted scenes will accumulate here.</li>';
+    return;
+  }
+  list.innerHTML = entries
+    .map((entry) => {
+      const meta = agentMeta(entry.provenance_agent);
+      const markers = [
+        entry.image_url ? "image" : null,
+        entry.ledger_source === "seed" ? "seed" : "canon",
+      ].filter(Boolean);
+      return `
+        <li class="canon-ledger__item" style="--agent-color: ${meta.color}">
+          <span class="canon-ledger__round">S${escapeHtml(entry.provenance_round ?? 0)}</span>
+          <div class="canon-ledger__body">
+            <strong>${escapeHtml(truncate(entryTitle(entry), 88))}</strong>
+            <span>${escapeHtml(meta.name)} · ${markers.map(escapeHtml).join(" · ")}</span>
+          </div>
+        </li>
+      `;
+    })
+    .join("");
+}
+
+function appendSceneDivider(scene) {
+  if (!scene || state.lastLoggedScene === scene) return;
+  state.lastLoggedScene = scene;
   const log = document.getElementById("debate-log");
-  const entry = document.createElement("div");
-  entry.className = `debate-entry debate-entry--${eventType}${modifierClass ? ` debate-entry--${eventType}--${modifierClass}` : ""}`;
+  const divider = document.createElement("div");
+  divider.className = "scene-divider";
+  divider.textContent = `Scene ${scene}`;
+  log.appendChild(divider);
+}
 
-  const meta = document.createElement("div");
-  meta.className = "debate-entry__meta";
-  meta.innerHTML = `<span>${eventType.replace(/_/g, " ")}</span><span>${agent || ""}</span>`;
+function detailsHtml(summary, text) {
+  if (!text) return "";
+  if (text.length < 180) return escapeHtml(text);
+  return `<details><summary>${escapeHtml(summary)}</summary>${escapeHtml(text)}</details>`;
+}
 
-  const body = document.createElement("div");
-  body.className = "debate-entry__body";
-  body.innerHTML = bodyHtml;
+function chipHtml(label, tone = "") {
+  if (!label) return "";
+  const toneClass = tone ? ` entry__chip--${tone}` : "";
+  return `<span class="entry__chip${toneClass}">${escapeHtml(label)}</span>`;
+}
 
-  entry.append(meta, body);
+function entryChipsHtml(chips = []) {
+  const body = chips
+    .filter(Boolean)
+    .map((chip) => (typeof chip === "string" ? chipHtml(chip) : chipHtml(chip.label, chip.tone)))
+    .join("");
+  return body ? `<div class="entry__chip-row" data-testid="entry-chip-row">${body}</div>` : "";
+}
+
+function appendDebateEntry(eventType, agent, bodyHtml, options = {}) {
+  const log = document.getElementById("debate-log");
+  appendSceneDivider(options.scene);
+  const meta = agentMeta(agent, eventType);
+  const entry = document.createElement("article");
+  const admittedClass = eventType === "admission_result" ? ` entry--admission_result--${options.admitted}` : "";
+  entry.className = `entry entry--${eventType}${admittedClass}`;
+  entry.style.setProperty("--agent-color", meta.color);
+  if (options.id) entry.id = options.id;
+  if (options.focusable) entry.tabIndex = -1;
+
+  const retryBadge = options.retry ? `<span class="entry__event-badge">↻ Retry</span>` : "";
+  const sub = options.scene ? `<span class="entry__sub">scene ${escapeHtml(options.scene)}</span>` : "";
+  entry.innerHTML = `
+    <div class="entry__avatar" aria-hidden="true">${escapeHtml(meta.short)}</div>
+    <div class="entry__body">
+      <div class="entry__head">
+        <span class="entry__agent-name">${escapeHtml(meta.name)}</span>
+        <span class="entry__event-badge">${escapeHtml(eventType.replace(/_/g, " "))}</span>
+        ${retryBadge}
+        ${sub}
+      </div>
+      ${entryChipsHtml(options.chips)}
+      <div class="entry__content">${bodyHtml}</div>
+    </div>
+  `;
   log.appendChild(entry);
   log.scrollTop = log.scrollHeight;
 }
@@ -203,62 +547,343 @@ function truncate(text, n = 220) {
   return text.length > n ? `${text.slice(0, n)}…` : text;
 }
 
-function renderEventToLog(eventType, payload) {
+function retrying(scene, eventType) {
+  return state.retryScenes.has(scene) && ["proposal", "critique", "synthesis", "judge_score"].includes(eventType);
+}
+
+function showGateBanner(payload, scene) {
+  const banner = document.getElementById("gate-banner");
+  const title = document.getElementById("gate-banner-title");
+  const detail = document.getElementById("gate-banner-detail");
+  const icon = banner?.querySelector(".gate-banner__icon");
+  const announcer = document.getElementById("live-announcer");
+  if (!banner || !title || !detail || !icon) return;
+  clearTimeout(state.gateBannerTimer);
+  banner.hidden = false;
+  banner.classList.toggle("gate-banner--reject", !payload.admitted);
+  banner.classList.toggle("gate-banner--admit", Boolean(payload.admitted));
+  icon.textContent = payload.admitted ? "✓" : "!";
+  title.textContent = payload.admitted ? `Scene ${scene} admitted after review` : `Scene ${scene} contradiction caught`;
+  detail.textContent = payload.admitted
+    ? `Resolved through renegotiation. ${payload.reason || "Candidate no longer conflicts with canon."}`
+    : `${payload.conflicting_entry_id ? `Conflicts with ${payload.conflicting_entry_id}. ` : ""}${payload.reason || "Contradiction detected."} Specialists will retry this scene.`;
+  if (announcer) announcer.textContent = `${title.textContent}. ${detail.textContent}`;
+  const panel = document.querySelector(".map-panel");
+  panel?.classList.toggle("map-panel--flash", !payload.admitted);
+  panel?.classList.toggle("map-panel--settle", Boolean(payload.admitted));
+  window.setTimeout(() => panel?.classList.remove("map-panel--flash", "map-panel--settle"), 700);
+  if (payload.admitted) {
+    state.gateBannerTimer = window.setTimeout(() => {
+      banner.hidden = true;
+      banner.classList.remove("gate-banner--admit");
+    }, 2400);
+  }
+}
+
+function updateGateJump() {
+  const jump = document.getElementById("jump-gate-catch");
+  if (!jump) return;
+  jump.hidden = !state.gateCatchEntry;
+}
+
+function jumpToGateCatch() {
+  const target = state.gateCatchEntry;
+  const banner = document.getElementById("gate-banner");
+  if (!target) return;
+  const entry = document.getElementById(target);
+  if (entry) {
+    entry.scrollIntoView({ block: "center", behavior: "smooth" });
+    entry.focus({ preventScroll: true });
+  } else if (banner && !banner.hidden) {
+    banner.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+}
+
+function shakeContestedHexes() {
+  document.querySelectorAll(".hex-cell--contested, .hex-cell--rejected").forEach((cell) => {
+    cell.classList.remove("hex-cell--shake");
+    void cell.getBoundingClientRect();
+    cell.classList.add("hex-cell--shake");
+    window.setTimeout(() => cell.classList.remove("hex-cell--shake"), 700);
+  });
+}
+
+function formatMetricValue(value) {
+  if (typeof value !== "number") return value ?? "—";
+  if (Number.isInteger(value)) return value.toLocaleString();
+  return value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+const METRIC_META = {
+  contradiction_rate: { label: "Contradiction rate", better: "lower" },
+  divergence_score: { label: "Creative divergence", better: "higher" },
+  provenance_depth: { label: "Provenance depth", better: "higher" },
+  token_usage: { label: "Token usage", better: "captured" },
+};
+
+function metricLabel(name) {
+  return METRIC_META[name]?.label || name.replace(/_/g, " ");
+}
+
+function metricDirection(name) {
+  const better = METRIC_META[name]?.better;
+  if (better === "lower") return "lower is better";
+  if (better === "higher") return "higher is better";
+  return "";
+}
+
+function isMissingTokenMetric(values) {
+  return !values || Number(values.stratum || 0) === 0 || Number(values.baseline || 0) === 0;
+}
+
+function metricVerdict(name, values) {
+  if (!values || name === "token_usage") return "";
+  const better = METRIC_META[name]?.better;
+  const stratum = Number(values.stratum);
+  const baseline = Number(values.baseline);
+  if (!Number.isFinite(stratum) || !Number.isFinite(baseline) || !better || stratum === baseline) return "mixed result";
+  const stratumWins = better === "lower" ? stratum < baseline : stratum > baseline;
+  return stratumWins ? "Stratum leads" : "baseline leads";
+}
+
+function metricSummaryText(name, values) {
+  if (name === "token_usage" && isMissingTokenMetric(values)) return "not captured in this replay";
+  const direction = metricDirection(name);
+  const verdict = metricVerdict(name, values);
+  const suffix = [direction, verdict].filter(Boolean).join("; ");
+  return `Stratum ${formatMetricValue(values.stratum)} vs baseline ${formatMetricValue(values.baseline)}${suffix ? ` (${suffix})` : ""}`;
+}
+
+function renderMetricsList() {
+  const list = document.getElementById("metrics-list");
+  if (!list) return;
+  list.innerHTML = "";
+  if (!state.metrics || Object.keys(state.metrics).length === 0) {
+    list.innerHTML = '<p class="metrics-list__empty">Metrics are not available yet.</p>';
+    return;
+  }
+  for (const [name, values] of Object.entries(state.metrics)) {
+    const row = document.createElement("div");
+    row.className = "metric-row";
+    const dt = document.createElement("dt");
+    dt.textContent = metricLabel(name);
+    const dd = document.createElement("dd");
+    if (name === "token_usage" && isMissingTokenMetric(values)) {
+      dd.innerHTML = '<span class="metric-note">not captured in this replay</span>';
+    } else {
+      const verdict = metricVerdict(name, values);
+      dd.innerHTML = `
+        <span class="v-stratum">Stratum ${escapeHtml(formatMetricValue(values.stratum))}</span>
+        <span class="v-baseline">Baseline ${escapeHtml(formatMetricValue(values.baseline))}</span>
+        ${verdict ? `<span class="metric-note">${escapeHtml(metricDirection(name))}; ${escapeHtml(verdict)}</span>` : ""}
+      `;
+    }
+    row.append(dt, dd);
+    list.append(row);
+  }
+}
+
+function renderScorecard() {
+  const panel = document.getElementById("judge-scorecard");
+  const list = document.getElementById("scorecard-list");
+  if (!panel || !list) return;
+  const canonCount = Array.from(state.canonEntries.values()).filter((entry) => entry.status === "canon").length;
+  const gateScenes = Array.from(state.timelineScenes.values()).filter((scene) => scene.retry).length;
+  const resolvedGateScenes = Array.from(state.timelineScenes.values()).filter((scene) => scene.retry && scene.resolved).length;
+  const items = [
+    ["Scenes negotiated", `${state.timelineScenes.size || "—"} lanes`],
+    ["Contradictions caught", gateScenes ? `${gateScenes}${resolvedGateScenes ? `, ${resolvedGateScenes} resolved` : ""}` : "none observed yet"],
+    ["Retries triggered", `${state.retryScenes.size || gateScenes || 0}`],
+    ["Admitted scenes", `${canonCount} entries`],
+    [".twee ready", state.runId ? "download export available" : "start or load a run"],
+    ["Qwen + MCP path", "Qwen agents, MCP admission screen"],
+  ];
+  if (state.gateCatchSummary) {
+    items.push(["Conflict caught and resolved", state.gateCatchSummary]);
+  }
+  if (state.metrics?.contradiction_rate) {
+    items.push([
+      "Contradiction metric",
+      metricSummaryText("contradiction_rate", state.metrics.contradiction_rate),
+    ]);
+  }
+  if (state.metrics?.token_usage) {
+    items.push([
+      "Observed token cost",
+      metricSummaryText("token_usage", state.metrics.token_usage),
+    ]);
+  }
+  list.innerHTML = items
+    .map(
+      ([label, value]) => `
+        <div class="scorecard-item">
+          <strong>${escapeHtml(value)}</strong>
+          <span>${escapeHtml(label)}</span>
+        </div>
+      `
+    )
+    .join("");
+  panel.hidden = !(state.baselineReady || state.runComplete || state.metrics || state.runId);
+}
+
+function renderEventToLog(eventType, payload, meta = {}) {
+  updateRosterForEvent(eventType, payload, meta.agent);
+  updateSceneIndicator(eventType, meta.scene);
+  trackTimelineEvent(eventType, payload, meta);
+  const opts = {
+    scene: meta.scene,
+    retry: retrying(meta.scene, eventType),
+  };
   switch (eventType) {
     case "seed_entry":
-      appendDebateEntry(eventType, "SEED", `<strong>${payload.status === "contested" ? "⚠ contested — " : ""}</strong>${truncate(payload.summary)}`);
+      rememberCanonEntry(payload, "seed");
+      appendDebateEntry(
+        eventType,
+        "SEED",
+        `<strong>${payload.status === "contested" ? "contested — " : ""}</strong>${escapeHtml(truncate(payload.summary))}`,
+        opts
+      );
       refreshWorld();
       break;
     case "proposal":
-      appendDebateEntry(eventType, payload.role, `<em>${payload.scene_title || ""}</em> — ${truncate(payload.summary)}`);
+      appendDebateEntry(
+        eventType,
+        payload.role,
+        `<em>${escapeHtml(payload.scene_title || "")}</em> — ${escapeHtml(truncate(payload.summary))}`,
+        opts
+      );
       break;
     case "critique":
       appendDebateEntry(
         eventType,
-        `${payload.critic_role} → ${payload.target_role}`,
-        `${payload.hard_flag ? "🚩 " : ""}${truncate(payload.objection)} <span style="opacity:.6">(cites ${payload.cited_entry_id})</span>`
+        payload.critic_role,
+        `<strong>Target: ${escapeHtml(payload.target_role || "—")}.</strong> ${payload.hard_flag ? "<strong>Hard flag.</strong> " : ""}${detailsHtml("Read objection", payload.objection)} <span style="opacity:.6">(cites ${escapeHtml(payload.cited_entry_id)})</span>`,
+        opts
       );
       break;
     case "judge_score":
-      appendDebateEntry(eventType, `${payload.dimension} on ${payload.role_scored}`, `${payload.score}/10 — ${truncate(payload.rationale, 120)}`);
+      appendDebateEntry(
+        eventType,
+        "JUDGES",
+        `<strong>${escapeHtml(payload.dimension)} on ${escapeHtml(payload.role_scored)}: ${escapeHtml(payload.score)}/10</strong> — ${detailsHtml("Read rationale", payload.rationale)}`,
+        opts
+      );
       break;
     case "synthesis":
       appendDebateEntry(
         eventType,
         "ARBITER",
-        `favored <strong>${payload.favored_role || "—"}</strong>, overruled <strong>${payload.overruled_role || "none"}</strong><br>${truncate(payload.synthesis_notes)}`
+        `${escapeHtml(truncate(payload.synthesis_notes))}`,
+        {
+          ...opts,
+          chips: [
+            payload.favored_role ? { label: `favored ${payload.favored_role}`, tone: "ok" } : null,
+            payload.overruled_role ? { label: `overruled ${payload.overruled_role}`, tone: "warn" } : null,
+            payload.entry_id ? `candidate ${payload.entry_id}` : null,
+            meta.scene ? `scene ${meta.scene}` : null,
+            meta.round ? `round ${meta.round}` : null,
+            opts.retry ? { label: "retry arbitration", tone: "warn" } : null,
+            "arbiter ruling",
+          ],
+        }
       );
       refreshWorld();
       break;
     case "admission_result":
+      // ponytail: retry state is scene-scoped because rejected revisions mint
+      // fresh entry IDs. Upgrade path: backend emits a stable revision group ID.
+      if (payload.admitted) {
+        showGateBanner(payload, meta.scene);
+        state.retryScenes.delete(meta.scene);
+        if (state.timelineScenes.get(meta.scene)?.retry) {
+          state.gateCatchSummary = `Scene ${meta.scene} resolved after gate retry`;
+        }
+        refreshCanonEntry(payload.entry_id);
+      } else {
+        state.retryScenes.add(meta.scene);
+        state.gateCatchSummary = `Scene ${meta.scene} conflict caught; retry queued`;
+        showGateBanner(payload, meta.scene);
+        shakeContestedHexes();
+      }
+      if (!payload.admitted) {
+        state.gateCatchEntry = `gate-catch-${domIdPart(payload.entry_id || `${meta.scene}-${meta.round}`)}`;
+        updateGateJump();
+      }
       appendDebateEntry(
         eventType,
-        payload.entry_id,
-        payload.admitted ? `✓ admitted — ${truncate(payload.reason, 120)}` : `✗ rejected (conflicts with ${payload.conflicting_entry_id}) — ${truncate(payload.reason, 120)}`,
-        String(payload.admitted)
+        "GATE",
+        payload.admitted
+          ? `<strong>admitted</strong> — ${escapeHtml(truncate(payload.reason, 160))}`
+          : `<strong>rejected</strong>${payload.conflicting_entry_id ? ` against <strong>${escapeHtml(payload.conflicting_entry_id)}</strong>` : ""} — ${escapeHtml(truncate(payload.reason, 180))}`,
+        {
+          ...opts,
+          admitted: payload.admitted,
+          retry: !payload.admitted || opts.retry,
+          id: !payload.admitted ? state.gateCatchEntry : null,
+          focusable: !payload.admitted,
+          chips: [
+            { label: payload.admitted ? "gate admitted" : "gate rejected", tone: payload.admitted ? "ok" : "danger" },
+            payload.entry_id ? `candidate ${payload.entry_id}` : null,
+            payload.conflicting_entry_id ? { label: `conflict ${payload.conflicting_entry_id}`, tone: "danger" } : null,
+            !payload.admitted ? { label: "retry queued", tone: "warn" } : state.timelineScenes.get(meta.scene)?.retry ? { label: "resolved", tone: "ok" } : null,
+            meta.scene ? `scene ${meta.scene}` : null,
+          ],
+        }
       );
+      renderScorecard();
       refreshWorld();
       break;
     case "human_injection":
-      appendDebateEntry(eventType, "HUMAN", `constraint injected: “${truncate(payload.full_text)}”`);
+      rememberCanonEntry(payload, "human");
+      appendDebateEntry(eventType, "HUMAN", `constraint injected: "${escapeHtml(truncate(payload.full_text))}"`, opts);
       refreshWorld();
       break;
     case "scene_failed":
-      appendDebateEntry(eventType, "ARBITER", `⚠ scene could not converge after retries — skipped. ${truncate(payload.reason, 160)}`);
+      appendDebateEntry(eventType, "ARBITER", `scene could not converge after retries — skipped. ${escapeHtml(truncate(payload.reason, 160))}`, opts);
       break;
     case "image_ready":
-      appendDebateEntry(eventType, payload.entry_id, "illustration ready.");
+      markCanonImage(payload.entry_id, payload.image_url);
+      appendDebateEntry(eventType, "GATE", `illustration ready for <strong>${escapeHtml(payload.entry_id)}</strong>.`, opts);
       refreshWorld();
       break;
     case "baseline_ready":
-      appendDebateEntry(eventType, "BASELINE", "single-shot baseline generation complete.");
+      state.baselineReady = true;
+      appendDebateEntry(eventType, "BASELINE", "single-shot baseline generation complete.", {
+        ...opts,
+        chips: [
+          { label: "baseline", tone: "warn" },
+          "single-shot",
+          "no negotiation",
+        ],
+      });
       document.getElementById("baseline-panel").hidden = false;
       document.getElementById("baseline-text").textContent = payload.text;
+      renderScorecard();
       loadMetrics();
       break;
     case "run_complete":
-      appendDebateEntry(eventType, null, payload.status === "done" ? "Negotiation complete." : `Run failed: ${payload.error}`);
-      setRunStatus(payload.status, payload.status === "done" ? "ok" : "error");
+      state.runComplete = true;
+      appendDebateEntry(
+        eventType,
+        "ARBITER",
+        payload.status === "done" ? "Negotiation complete." : `Run failed: ${escapeHtml(payload.error)}`,
+        {
+          ...opts,
+          chips: [
+            { label: payload.status === "done" ? "run complete" : "run failed", tone: payload.status === "done" ? "ok" : "danger" },
+            "scorecard ready",
+          ],
+        }
+      );
+      {
+        const isReplay = new URLSearchParams(window.location.search).has("run");
+        const label = payload.status === "done" ? (isReplay ? "replay complete" : "run complete") : "run failed";
+        setRunStatus(label, payload.status === "done" ? "ok" : "error");
+      }
+      finishRoster(payload.status === "done" ? "complete" : "failed");
+      finishSceneIndicator(payload.status);
+      renderScorecard();
+      loadMetrics();
       refreshWorld();
       // The server closes its end of the stream right after this event, but
       // EventSource treats that as a dropped connection and auto-reconnects
@@ -271,7 +896,7 @@ function renderEventToLog(eventType, payload) {
       }
       break;
     default:
-      appendDebateEntry(eventType, null, JSON.stringify(payload));
+      appendDebateEntry(eventType, null, escapeHtml(JSON.stringify(payload)), opts);
   }
 }
 
@@ -281,15 +906,10 @@ async function loadMetrics() {
     const res = await fetch(`${API_BASE}/api/metrics/${state.runId}`);
     if (!res.ok) return;
     const metrics = await res.json();
-    const list = document.getElementById("metrics-list");
-    list.innerHTML = "";
-    for (const [name, values] of Object.entries(metrics)) {
-      const dt = document.createElement("dt");
-      dt.textContent = name.replace(/_/g, " ");
-      const dd = document.createElement("dd");
-      dd.textContent = `stratum ${values.stratum} · baseline ${values.baseline}`;
-      list.append(dt, dd);
-    }
+    state.metrics = metrics;
+    document.getElementById("baseline-panel").hidden = false;
+    renderMetricsList();
+    renderScorecard();
   } catch (err) {
     console.error("Failed to load metrics:", err);
   }
@@ -299,8 +919,26 @@ function connectToStream(runId) {
   if (state.eventSource) state.eventSource.close();
 
   state.maxRoundSeen = 0;
+  state.retryScenes.clear();
+  state.scenePhases.clear();
+  state.currentScene = null;
+  state.lastLoggedScene = null;
+  state.timelineScenes.clear();
+  state.canonEntries.clear();
+  state.gateCatchEntry = null;
+  state.gateCatchSummary = null;
+  state.metrics = null;
+  state.baselineReady = false;
+  state.runComplete = false;
   document.getElementById("debate-log").innerHTML = "";
   document.getElementById("baseline-panel").hidden = true;
+  document.getElementById("judge-scorecard").hidden = true;
+  document.getElementById("gate-banner").hidden = true;
+  document.getElementById("scene-indicator").textContent = "—";
+  renderTimeline();
+  renderCanonLedger();
+  updateGateJump();
+  hideHexTooltip();
 
   // ?pace=<seconds>[&slow_from=<i>&slow_to=<i>&slow_pace=<seconds>] (see
   // backend.main's _stream_run) paces a finished run's replay to look like
@@ -315,6 +953,10 @@ function connectToStream(runId) {
   const qs = replayParams.toString();
   const streamUrl = `${API_BASE}/api/stream/${runId}${qs ? `?${qs}` : ""}`;
   const es = new EventSource(streamUrl);
+  es.onopen = () => {
+    const isReplay = new URLSearchParams(window.location.search).has("run");
+    setRunStatus(isReplay ? `replay ${runId} — streaming…` : `run ${runId} — streaming…`, "pending");
+  };
   const eventTypes = [
     "seed_entry",
     "proposal",
@@ -339,7 +981,11 @@ function connectToStream(runId) {
       } else {
         state.maxRoundSeen = Infinity; // run finished: show everything
       }
-      renderEventToLog(type, type === "run_complete" ? parsed : parsed.payload);
+      renderEventToLog(type, type === "run_complete" ? parsed : parsed.payload, {
+        round: type === "run_complete" ? state.maxRoundSeen : parsed.round,
+        scene: type === "run_complete" ? state.currentScene : parsed.scene,
+        agent: type === "run_complete" ? "ARBITER" : parsed.agent,
+      });
     });
   }
   es.onerror = () => {
@@ -398,6 +1044,7 @@ function openTwine() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  initRoster();
   checkConnection();
 
   // Resume an existing run via ?run=<id> — reconnecting the SSE stream
@@ -407,7 +1054,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const resumeRunId = new URLSearchParams(window.location.search).get("run");
   if (resumeRunId) {
     state.runId = resumeRunId;
-    setRunStatus(`run ${resumeRunId} — resuming…`, "pending");
+    setRunStatus(`replay ${resumeRunId} — loading…`, "pending");
+    const announcer = document.getElementById("live-announcer");
+    if (announcer) announcer.textContent = "Loading saved Stratum replay.";
+    renderScorecard();
     refreshWorld();
     connectToStream(resumeRunId);
   }
@@ -430,4 +1080,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("export-twee").addEventListener("click", downloadExport);
   document.getElementById("export-html").addEventListener("click", openTwine);
+  document.getElementById("scorecard-export-twee").addEventListener("click", downloadExport);
+  document.getElementById("jump-gate-catch").addEventListener("click", jumpToGateCatch);
 });

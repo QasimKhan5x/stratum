@@ -5,3 +5,4 @@ python-dotenv==1.0.1
 pydantic>=2.10,<3
 numpy==2.2.3
 dashscope==1.26.2
+mcp==1.28.1

@@ -26,6 +26,11 @@ flowchart TB
         Neg["negotiation.py<br/>per-scene: thesis → antithesis → judging →<br/>synthesis → admission (retry on rejection)"]
         Gate["admission_gate.py<br/>embedding screen → LLM contradiction check"]
         WB[("world_bible.py<br/>in-memory canon store")]
+        McpClient["mcp_world_bible_client.py"]
+    end
+
+    subgraph MCP["Local MCP server (stdio subprocess)"]
+        McpServer["mcp_world_bible_server.py<br/>check_contradiction · search_world_bible"]
     end
 
     subgraph Agents["backend/agents/"]
@@ -52,6 +57,9 @@ flowchart TB
     API --> Orch --> Neg
     Neg --> Spec & Judges & Arbiter
     Neg --> Gate --> WB
+    Gate --> McpClient
+    McpClient -- "MCP: check_contradiction" --> McpServer
+    McpClient -. "falls back in-process on failure" .-> Gate
     Orch --> Seed & Baseline
     Neg --> Illustrator
     Orch -. "concurrent, non-blocking" .-> Baseline
@@ -74,6 +82,33 @@ favoring one proposal and stating what it overruled) → verified admission
 the plausibly-related prior entries). A rejected synthesis triggers a
 targeted re-negotiation of just the conflicting field, up to 3 attempts,
 before the scene is honestly skipped rather than forced through.
+
+**MCP integration** (`backend/mcp_world_bible_server.py`,
+`backend/mcp_world_bible_client.py`): the admission gate's stage-1
+embedding screen — ranking existing canon entries by cosine similarity to
+a candidate scene, to narrow the field before the expensive LLM
+contradiction check — runs through a small local MCP server instead of
+being computed directly in-process. The server exposes two tools,
+`check_contradiction` (used by the gate: which prior entries is this
+candidate plausibly related to) and `search_world_bible` (general-purpose
+top-k semantic lookup over canon, for future use by other agents). It's
+spawned as a stdio subprocess per call via the official `mcp` Python SDK,
+takes already-computed embedding vectors rather than raw text so it needs
+no DashScope credentials or network access of its own, and every call is
+wrapped in a fallback to the identical in-process computation if the MCP
+round trip fails for any reason — so a real admission decision genuinely
+flows through MCP on the common path, without putting the negotiation
+critical path's reliability at the mercy of an extra subprocess.
+
+Two distinct disagreement-resolution mechanisms are doing the work here,
+not one: specialist-vs-specialist disagreement within a round is resolved
+by the judge panel's scores plus the Arbiter's synthesis (a considered
+ruling, not a vote or a coin flip); canon-level conflict — a synthesis
+that contradicts something already agreed in an earlier round — is caught
+separately by the admission gate and resolved by re-negotiation, not by
+argument. The gate exists precisely because the first mechanism alone
+can't catch that kind of contradiction: the Arbiter only sees this
+round's four proposals, never the full canon.
 
 **On "efficiency gain":** Stratum makes roughly 13-18 model calls per
 scene (four proposals, four critiques, four judge-dimension batches, one
@@ -153,12 +188,45 @@ has time to land. All are recording conveniences only — see
 pytest tests/
 ```
 
+A Playwright smoke test also covers the frontend (page loads, core controls
+are present, no console errors, and an axe-core scan finds no critical/
+serious accessibility violations). Requires the frontend dev server running
+on `:8090` (see "Running locally"):
+
+```bash
+npm install && npx playwright install chromium  # one-time setup
+npx playwright test
+```
+
 ## Deployment
 
 Deployed on a single Alibaba Cloud ECS instance (`ecs.e-c1m1.large`,
 Singapore/`ap-southeast-1`): nginx serves `frontend/` as static files and
 reverse-proxies `/api/` and `/health` to a uvicorn process managed by
 systemd (`stratum.service`, auto-restarts on failure).
+
+## Submission Evidence Checklist
+
+- Live demo URL: http://47.84.114.89
+- Architecture diagram and system explanation: this README's Architecture
+  section.
+- Qwen/DashScope integration: `backend/models_client.py` for
+  OpenAI-compatible chat, JSON, embeddings, and token accounting;
+  `backend/agents/illustrator.py` for native DashScope qwen-image calls.
+- MCP evidence: `backend/mcp_world_bible_server.py`,
+  `backend/mcp_world_bible_client.py`, and
+  `tests/test_mcp_admission_gate.py`.
+- Demo replay path: `scripts/load_demo_run.py` with saved artifacts under
+  `demo_recordings/` when available locally.
+- Verification: `.venv/bin/python -m pytest tests/ -q`; frontend smoke via
+  `npx playwright test` when frontend changes are in scope.
+- ECS deployment evidence: this README's Deployment section and the live
+  URL above. Current shipped deployment is a single ECS host with nginx and
+  systemd; Tablestore-style persistent state remains a planned cloud-native
+  upgrade, not a shipped claim.
+- Demo video/artifact note: assembled video and locked replay artifacts are
+  expected under git-ignored `demo_recordings/` or attached separately for
+  judging.
 
 ## Further reading
 

@@ -121,6 +121,11 @@ def chat_json(role: str, messages: list[dict], thinking: bool = False) -> dict:
     Every agent in the negotiation loop needs structured output (a proposal,
     a critique, a score, a synthesized entry) rather than free text, so this
     is the primary entry point agent-logic code should call.
+
+    DashScope does not support thinking mode together with structured JSON
+    response_format, so `thinking` is accepted for call-site compatibility
+    but deliberately ignored here. Free-text chat() remains the only wrapper
+    that may request thinking.
     """
     if role not in MODEL_ROLES:
         raise ValueError(f"Unknown model role '{role}'. Expected one of {list(MODEL_ROLES)}.")
@@ -131,8 +136,6 @@ def chat_json(role: str, messages: list[dict], thinking: bool = False) -> dict:
         "messages": messages,
         "response_format": {"type": "json_object"},
     }
-    if thinking and role in _THINKING_CAPABLE_ROLES:
-        kwargs["extra_body"] = {"enable_thinking": True}
 
     response = _client.chat.completions.create(**kwargs)
     _record_usage(response)
