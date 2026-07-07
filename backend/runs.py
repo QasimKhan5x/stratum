@@ -1,34 +1,42 @@
-"""In-memory generation-run registry.
+"""Generation-run registry, backed by SQLite for durability + cross-process
+sharing (see backend/sqlite_store.py), with an in-memory dict as a hot-path
+cache for the common single-process case.
 
-ponytail: like world_bible.py, this is a temporary in-memory stand-in for
-what would be Tablestore-backed run state in production — runs vanish on
-server restart. A "run" bundles one WorldBible, its full event log (for
-replay/provenance per stratum-architecture-plan.md's "debate event" data
-shape), and a live asyncio.Queue that backend.negotiation and
-backend.orchestrator push DebateEvents into as they happen, which
-backend.main's SSE endpoint drains.
+A "run" bundles one WorldBible and its full event log (for replay/
+provenance per stratum-architecture-plan.md's "debate event" data shape).
+backend.main's SSE endpoint polls `events` directly by index rather than
+draining a queue — a shared asyncio.Queue was tried first, but it
+double-yields every event whenever a subscriber connects after the run
+already finished with nobody watching live (the queue still holds every
+event, never drained, on top of the full history replay), and would also
+split events non-deterministically across two concurrent subscribers.
+Polling a list by index has neither problem — and now that list can also be
+refreshed from SQLite (see Run.refresh_events_from_store), the same polling
+loop works whether this process generated the run or a sibling replica did.
 """
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 from dataclasses import dataclass, field
 from typing import Literal
 
+from backend import sqlite_store
+from backend.cloud_storage import make_world_bible
 from backend.schemas import DebateEvent
 from backend.world_bible import WorldBible
 
 RunStatus = Literal["pending", "running", "done", "failed"]
+
+sqlite_store.init_db()
 
 
 @dataclass
 class Run:
     id: str
     premise: str
-    world_bible: WorldBible = field(default_factory=WorldBible)
+    world_bible: WorldBible = field(default_factory=WorldBible)  # replaced with a Tablestore- or SQLite-backed store in create_run()
     events: list[DebateEvent] = field(default_factory=list)
-    queue: asyncio.Queue = field(default_factory=asyncio.Queue)
     status: RunStatus = "pending"
     baseline_text: str | None = None
     error: str | None = None
@@ -43,17 +51,53 @@ class Run:
 
     def emit(self, event: DebateEvent) -> None:
         self.events.append(event)
-        self.queue.put_nowait(event)
+        # Write-through: persisted before returning so a reader in another
+        # process (or this one, after a restart) never sees a gap. Meta is
+        # re-saved on every event rather than hooked to each individual
+        # `run.status = ...`/`run.baseline_text = ...` assignment elsewhere
+        # (backend.orchestrator sets those as plain attributes) — simpler,
+        # and "at most one event's latency stale" is a non-issue at this
+        # project's real event cadence (seconds between events, not µs).
+        sqlite_store.append_event(self.id, len(self.events) - 1, event)
+        sqlite_store.save_run_meta(self)
+
+    def refresh_events_from_store(self) -> None:
+        """Pulls any events this process hasn't seen yet from SQLite — the
+        mechanism that lets /api/stream serve a run live even when a
+        *different* backend process/replica is the one actually generating
+        it (see backend/sqlite_store.py's module docstring). A no-op, cheap
+        indexed query when this process IS the one generating the run,
+        since there's nothing new to find."""
+        new_events = sqlite_store.load_events_from(self.id, len(self.events))
+        if new_events:
+            self.events.extend(new_events)
+            fresh = sqlite_store.load_run(self.id)
+            if fresh is not None:
+                self.status = fresh.status
+                self.baseline_text = fresh.baseline_text
+                self.error = fresh.error
 
 
 _RUNS: dict[str, Run] = {}
 
 
 def create_run(premise: str) -> Run:
-    run = Run(id=uuid.uuid4().hex[:12], premise=premise)
+    run_id = uuid.uuid4().hex[:12]
+    run = Run(id=run_id, premise=premise, world_bible=make_world_bible(run_id))
+    sqlite_store.save_run_meta(run)
     _RUNS[run.id] = run
     return run
 
 
 def get_run(run_id: str) -> Run | None:
-    return _RUNS.get(run_id)
+    """Checks the in-memory cache first (the fast path for a run this
+    process is actively generating), falling back to SQLite on a miss —
+    either this process restarted, or a sibling replica generated this run.
+    """
+    cached = _RUNS.get(run_id)
+    if cached is not None:
+        return cached
+    loaded = sqlite_store.load_run(run_id)
+    if loaded is not None:
+        _RUNS[run_id] = loaded
+    return loaded

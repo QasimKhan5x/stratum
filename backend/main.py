@@ -18,11 +18,13 @@ from fastapi.responses import PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from backend import sqlite_store
 from backend.metrics import compute_comparison
 from backend.models_client import embed, list_models
 from backend.orchestrator import DEFAULT_SCENE_COUNT, run_generation
 from backend.runs import Run, create_run, get_run
 from backend.schemas import DebateEvent, WorldBibleEntry
+from backend.cloud_storage import try_upload_export
 from backend.twee_export import export_twee
 
 app = FastAPI(title="Stratum")
@@ -83,9 +85,13 @@ async def _stream_run(
     slow_pace_seconds: float = 0.0,
     grace_seconds: float = 0.0,
 ):
-    # Replay everything already emitted before this subscriber connected,
-    # then continue with the live queue — so a client that connects
-    # slightly late still sees the full negotiation from the start.
+    # Poll run.events by index rather than draining a shared queue — see
+    # backend.runs.Run's docstring for why: a queue double-yields every
+    # event whenever a subscriber connects after the run already finished
+    # unwatched, and splits events non-deterministically across concurrent
+    # subscribers. An index into the same always-growing list has neither
+    # problem and naturally covers both "replay what already happened" and
+    # "keep streaming what happens next" with one code path.
     #
     # pace_seconds exists for demo recording (see stratum-demo-and-
     # verification.md's pre-generate-and-replay fallback): a finished run's
@@ -98,32 +104,37 @@ async def _stream_run(
     # the gate-catch) play at a legible speed while the rest of a long run
     # (dozens of judge_score events per scene) moves quickly — recording
     # convenience only, not something the live path ever needs.
-    for i, event in enumerate(list(run.events)):
-        yield _event_to_sse(event)
-        delay = slow_pace_seconds if slow_from <= i < slow_to else pace_seconds
-        if delay:
-            await asyncio.sleep(delay)
-
-    # grace_seconds keeps an already-"done" run's stream open a bit longer
-    # instead of closing the instant history replay finishes — otherwise
-    # there's no window to demo a live /api/inject against a pre-generated
-    # replay, since the connection would already be gone by the time the
-    # injection request lands. Real in-progress runs never need this: their
-    # status simply isn't "done" yet.
+    next_index = 0
     grace_deadline = None
     while True:
-        run_finished = run.status in ("done", "failed") and run.queue.empty()
+        # Cheap, always-safe: a no-op indexed SQLite query when this
+        # process is the one actually generating the run (nothing new to
+        # find), and the mechanism that lets a *different* backend replica
+        # stream a run it didn't itself generate (see
+        # backend.runs.Run.refresh_events_from_store).
+        run.refresh_events_from_store()
+        pending = run.events[next_index:]
+        for i, event in enumerate(pending, start=next_index):
+            yield _event_to_sse(event)
+            delay = slow_pace_seconds if slow_from <= i < slow_to else pace_seconds
+            if delay:
+                await asyncio.sleep(delay)
+        next_index += len(pending)
+
+        # grace_seconds keeps an already-"done" run's stream open a bit
+        # longer instead of closing the instant history replay finishes —
+        # otherwise there's no window to demo a live /api/inject against a
+        # pre-generated replay, since the connection would already be gone
+        # by the time the injection request lands. Real in-progress runs
+        # never need this: their status simply isn't "done" yet.
+        run_finished = run.status in ("done", "failed") and next_index >= len(run.events)
         if run_finished:
             if grace_deadline is None:
                 grace_deadline = asyncio.get_event_loop().time() + grace_seconds
             if asyncio.get_event_loop().time() >= grace_deadline:
                 yield f"event: run_complete\ndata: {json.dumps({'status': run.status, 'error': run.error})}\n\n"
                 return
-        try:
-            event = await asyncio.wait_for(run.queue.get(), timeout=0.3)
-            yield _event_to_sse(event)
-        except asyncio.TimeoutError:
-            continue
+        await asyncio.sleep(0.1)
 
 
 @app.get("/api/stream/{run_id}")
@@ -210,11 +221,11 @@ def api_export(run_id: str) -> PlainTextResponse:
         twee_text = export_twee(run.world_bible, title=run.premise[:60])
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return PlainTextResponse(
-        content=twee_text,
-        media_type="text/plain",
-        headers={"Content-Disposition": f'attachment; filename="{run_id}.twee"'},
-    )
+    headers = {"Content-Disposition": f'attachment; filename="{run_id}.twee"'}
+    oss_url = try_upload_export(run_id, twee_text)
+    if oss_url:
+        headers["X-OSS-Url"] = oss_url
+    return PlainTextResponse(content=twee_text, media_type="text/plain", headers=headers)
 
 
 @app.get("/api/metrics/{run_id}")
@@ -253,9 +264,16 @@ def api_import_run(request: ImportRunRequest) -> dict:
     run = create_run(request.premise)
     for entry in request.world_bible_entries:
         run.world_bible.add(entry)
+    # Persist through sqlite_store directly (bulk-loading a whole exported
+    # run's events at once, not one at a time) rather than calling emit()
+    # per event and paying its per-call save_run_meta() write N times —
+    # then a single explicit meta save once, matching what emit() would do.
+    for seq, event in enumerate(request.events):
+        sqlite_store.append_event(run.id, seq, event)
     run.events = list(request.events)
     run.baseline_text = request.baseline_text
     run.status = request.status  # type: ignore[assignment]
+    sqlite_store.save_run_meta(run)
     return {"run_id": run.id}
 
 

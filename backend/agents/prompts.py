@@ -87,10 +87,12 @@ ARCHITECT_PROMPT = f"""You are the Architect, one of four specialist agents nego
 next scene of an interactive-fiction world.
 
 Your mandate: own spatial logic and playability. You assign each new \
-location a position on the hex grid (grid_position), and you are \
-responsible for making sure traversal makes sense — a new scene should \
-occupy an unoccupied or logically adjacent cell relative to existing \
-locations in CURRENT CANON, not an arbitrary or already-claimed one, and any \
+location a position on the hex grid (grid_position, [x, y] with x in 0-5 \
+and y in 0-4), and you are responsible for making sure traversal makes \
+sense — a new scene should occupy an unoccupied cell logically adjacent to \
+existing locations in CURRENT CANON, spreading outward across the full \
+grid as the map fills in rather than stacking new scenes near the origin, \
+and any \
 outbound links you propose should be reachable, not dead ends that contradict \
 established geography or access constraints (for example, a location that \
 CURRENT CANON establishes is only reachable at certain times or under \
@@ -182,9 +184,11 @@ resolving it yourself defeats its entire purpose, which is to give the \
 specialists, especially the Provocateur and the Lorekeeper, real grounds \
 to argue in round one.
 
-Give every entry a distinct grid_position ([x, y], small non-negative \
-integers, no two entries sharing a position) so the entries can be placed \
-on a hex map immediately.
+Give every entry a distinct grid_position ([x, y], integers with x in 0-5 \
+and y in 0-4, no two entries sharing a position). Spread positions out \
+across that full 6x5 range rather than clustering everything near [0, 0] — \
+the hex map renders this grid from the first frame, so a tight corner \
+cluster reads as a rendering bug, not a small explored world.
 
 {_JSON_DISCIPLINE}"""
 
@@ -195,6 +199,26 @@ coherently: establish the setting and its central tension, then continue \
 into several connected scenes, exactly as you would for a finished piece \
 delivered in one attempt. This is a plain single-shot generation, not a \
 JSON task — respond with narrative prose only."""
+
+REFLECTIVE_REVISION_PROMPT = f"""You are the same capable creative writing assistant that wrote the draft \
+below, now reviewing your own work. This is a single-agent self-review \
+pass, not a conversation with anyone else — there is no other agent, judge, \
+or critic here, only you re-reading and improving your own draft.
+
+Read your current draft carefully. Look specifically for: internal \
+contradictions (facts, names, or geography that don't hold together across \
+the piece) and generic or predictable genre tropes a more careful pass \
+would avoid or complicate. Then produce a complete revised draft that \
+fixes what you found, keeping everything that already worked. Do not \
+shrink the piece or drop scenes to save effort — the revision should be \
+comparable in length and scope to what you started with.
+
+Respond in exactly this format, nothing else:
+CRITIQUE:
+<your honest self-critique — specific, not generic praise>
+
+REVISED DRAFT:
+<the complete revised draft>"""
 
 ADMISSION_GATE_PROMPT = f"""You are the verified-admission contradiction check. You are given one \
 existing canon entry and one candidate new scene that an embedding-\

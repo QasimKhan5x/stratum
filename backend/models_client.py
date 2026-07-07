@@ -1,32 +1,43 @@
-"""Thin wrapper around the `openai` SDK pointed at DashScope's
-OpenAI-compatible endpoint.
+"""Thin wrapper around the `openai` SDK, pointed at DashScope's
+OpenAI-compatible endpoint by default.
 
 DashScope (QwenCloud) exposes an OpenAI-compatible `compatible-mode/v1`
 API — the standard `openai` Python SDK works unmodified by swapping
-`base_url` and `api_key`. No DashScope-specific SDK is used.
+`base_url` and `api_key`. No DashScope-specific SDK is used, and no
+DashScope-specific code lives below this module: `LLM_BASE_URL`/
+`LLM_API_KEY` (backend/config.py) point the same client at any other
+OpenAI-compatible provider (OpenAI itself, a local vLLM/Ollama/LM Studio
+server, etc.), and each MODEL_ROLES entry has a matching `LLM_MODEL_<ROLE>`
+env override, so forking this repo for a non-QwenCloud backend is a config
+change, not a code change.
 """
 
 from __future__ import annotations
 
 import contextvars
 import json
+import os
 from contextlib import contextmanager
 
 from openai import OpenAI
 
 from backend.config import settings
 
-DASHSCOPE_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-
-# Confirmed-live QwenCloud model names, mapped to the role that calls them.
-# See stratum-architecture-plan.md for why each role uses this specific model.
-MODEL_ROLES: dict[str, str] = {
+# Confirmed-live QwenCloud model names by default — see
+# stratum-architecture-plan.md for why each role uses this specific model —
+# each overridable independently via LLM_MODEL_<ROLE> (e.g. LLM_MODEL_JUDGE)
+# for anyone pointing this at a different provider's model catalog.
+_DEFAULT_MODEL_ROLES: dict[str, str] = {
     "seed": "qwen3.7-max",
     "arbiter": "qwen3.7-max",
     "specialist": "qwen3.7-plus",
     "judge": "qwen3.6-flash",
     "image": "qwen-image-2.0-pro",
     "embedding": "text-embedding-v4",
+}
+MODEL_ROLES: dict[str, str] = {
+    role: os.environ.get(f"LLM_MODEL_{role.upper()}", default)
+    for role, default in _DEFAULT_MODEL_ROLES.items()
 }
 
 # Thinking mode only matters for the two roles doing deep reasoning
@@ -42,8 +53,8 @@ _THINKING_CAPABLE_ROLES = {"seed", "arbiter"}
 # healthy requests. max_retries=1 (down from the SDK's default of 2) bounds
 # the worst case for one call to two attempts (~6 minutes) rather than three.
 _client = OpenAI(
-    base_url=DASHSCOPE_BASE_URL,
-    api_key=settings.dashscope_api_key,
+    base_url=settings.llm_base_url,
+    api_key=settings.llm_api_key,
     timeout=180.0,
     max_retries=1,
 )

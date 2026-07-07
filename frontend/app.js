@@ -5,6 +5,26 @@
 // origin, so a relative base just works.
 const API_BASE = location.port === "8090" ? "http://localhost:8000" : "";
 
+// Fixed, deterministic hex grid — entries are placed at their real stored
+// grid_position (clamped defensively), never an ad hoc layout. Rendered in
+// full from the first paint so fog-of-war is a real territory, not a set
+// of placeholder diamonds that only appears once something has happened
+// there.
+//
+// Sized to 6x5 (30 cells) to match a typical run's real entry count (6-8
+// seed entries + up to 4 scenes = ~10-12 total) — ponytail: this must stay
+// in sync with the "0-5 by 0-4" bounds given to agents in
+// backend/agents/prompts.py, seed.py, specialists.py, and arbiter.py's
+// grid_position instructions. A 12x8=96 grid was tried first and left
+// ~85-90% of the board permanently fog for an entire run, which read as a
+// broken/empty map rather than "fog of war" — see the map-review findings.
+// Upgrade path if runs ever produce meaningfully more entries: size this
+// (and the matching backend bounds) to scene_count dynamically instead of
+// a fixed constant.
+const GRID_COLS = 6;
+const GRID_ROWS = 5;
+const HEX_SIZE = 34;
+
 // ponytail: single-run-at-a-time client state, no persistence across page
 // reloads. Upgrade path: a run picker backed by a "list runs" endpoint, if
 // juggling multiple concurrent negotiations ever becomes a real need.
@@ -13,58 +33,67 @@ const state = {
   eventSource: null,
   // Tracks the highest round any event has referenced so far. Used to cap
   // which world-bible entries the map renders (see refreshWorld) — without
-  // this, replaying a finished run's full event history (see backend.main's
-  // /api/stream replay-then-live design, and demo_recordings/ for
-  // pre-generated runs used per stratum-demo-and-verification.md's
-  // pre-generate-and-replay fallback) would show every scene's hex
-  // instantly instead of progressively, since /api/world always returns
-  // the run's *current* (i.e. final, for a finished run) state regardless
-  // of how far the paced event replay has actually gotten.
+  // this, replaying a finished run's full event history would show every
+  // scene's hex instantly instead of progressively, since /api/world always
+  // returns the run's *current* (i.e. final, for a finished run) state
+  // regardless of how far the paced event replay has actually gotten.
   maxRoundSeen: 0,
-  retryScenes: new Set(),
-  scenePhases: new Map(),
-  currentScene: null,
-  lastLoggedScene: null,
-  gateBannerTimer: null,
+  // How many admission-gate rejections a scene has already absorbed, so a
+  // retry's fresh proposals/critiques/judging/synthesis are attributed to
+  // "Round 2" (etc.) instead of being visually indistinguishable from a
+  // clean first pass. The schema has no explicit attempt/revision id, so
+  // this is inferred purely from event order: bumped only once, right
+  // after logging a rejection, using nothing but scene + arrival order.
+  sceneAttempt: new Map(),
   timelineScenes: new Map(),
+  foundationCount: 0,
+  humanInjectionCount: 0,
+  foundationDividerShown: false,
+  lastLoggedScene: null,
+  currentScene: null,
+  gateBannerTimer: null,
+  disagreementBannerTimer: null,
   canonEntries: new Map(),
   gateCatchEntry: null,
   gateCatchSummary: null,
   metrics: null,
+  baselineText: null,
   baselineReady: false,
   runComplete: false,
+  // Demo-recording-only pacing params, captured once at load and stripped
+  // from the visible URL (see stripReplayParamsFromUrl) so the address bar
+  // stays clean during actual use.
+  replayParams: {},
 };
 
 const AGENTS = {
-  LOREKEEPER: { name: "Lorekeeper", short: "LO", color: "var(--agent-lorekeeper)", roster: true },
-  PROVOCATEUR: { name: "Provocateur", short: "PR", color: "var(--agent-provocateur)", roster: true },
-  HARMONIST: { name: "Harmonist", short: "HA", color: "var(--agent-harmonist)", roster: true },
-  ARCHITECT: { name: "Architect", short: "AR", color: "var(--agent-architect)", roster: true },
-  ARBITER: { name: "Arbiter", short: "AB", color: "var(--agent-arbiter)", roster: true },
-  JUDGES: { name: "Judges", short: "JG", color: "var(--agent-judge)", roster: true },
-  GATE: { name: "Gate", short: "GT", color: "var(--agent-gate)", roster: true },
-  HUMAN: { name: "Human", short: "HU", color: "var(--agent-human)" },
-  SEED: { name: "Seed", short: "SE", color: "var(--agent-seed)" },
-  BASELINE: { name: "Baseline", short: "BL", color: "var(--agent-baseline)" },
+  LOREKEEPER: { name: "Lorekeeper", glyph: "i-book", color: "var(--agent-lorekeeper)", roster: true },
+  PROVOCATEUR: { name: "Provocateur", glyph: "i-bolt", color: "var(--agent-provocateur)", roster: true },
+  HARMONIST: { name: "Harmonist", glyph: "i-fork", color: "var(--agent-harmonist)", roster: true },
+  ARCHITECT: { name: "Architect", glyph: "i-compass", color: "var(--agent-architect)", roster: true },
+  ARBITER: { name: "Arbiter", glyph: "i-seal", color: "var(--agent-arbiter)", roster: true },
+  JUDGES: { name: "Judges' Panel", glyph: "i-scale", color: "var(--agent-judges)", roster: true },
+  GATE: { name: "Admission Gate", glyph: "i-shield", color: "var(--agent-gate)", roster: true },
+  HUMAN: { name: "Human", glyph: "i-hand", color: "var(--agent-human)" },
+  SEED: { name: "Seed Agent", glyph: "i-sprout", color: "var(--agent-seed)" },
+  BASELINE: { name: "Baseline", glyph: "i-baseline", color: "var(--agent-baseline)" },
+  ILLUSTRATOR: { name: "Illustrator", glyph: "i-image", color: "var(--agent-illustrator)" },
 };
 
-const PHASE_BY_EVENT = {
-  proposal: "Proposing",
-  critique: "Critiquing",
-  judge_score: "Judging",
-  synthesis: "Synthesizing",
-  admission_result: "Admission",
+const EVENT_STAGE = {
+  proposal: "Propose",
+  critique: "Critique",
+  judge_score: "Judge",
+  synthesis: "Synthesize",
+  admission_result: "Gate",
 };
 
-const TIMELINE_PHASES = [
-  ["proposal", "Propose"],
-  ["critique", "Critique"],
-  ["judge_score", "Judge"],
-  ["synthesis", "Synthesize"],
-  ["admission_result", "Gate"],
-];
-
-const EVENT_STAGE = Object.fromEntries(TIMELINE_PHASES);
+// Event types with no per-scene negotiation lifecycle: seeding happens once
+// before any negotiation, a human injection can land at any moment without
+// belonging to a specialist/judge/arbiter round, baseline generation is a
+// side channel, and run_complete is a terminal marker — none of these
+// belong inside the "Scene N, Round M" grid (see trackTimelineEvent).
+const NON_SCENE_EVENTS = new Set(["seed_entry", "human_injection", "baseline_ready", "run_complete"]);
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -79,9 +108,20 @@ function domIdPart(value) {
   return String(value ?? "unknown").replace(/[^a-zA-Z0-9_-]/g, "-");
 }
 
+function glyphHtml(glyphId) {
+  return `<svg class="glyph" aria-hidden="true"><use href="#${escapeHtml(glyphId || "i-baseline")}"></use></svg>`;
+}
+
 function agentKey(agent, eventType) {
-  const raw = String(agent || "").toUpperCase();
+  // ponytail: defensive client-side normalization for pre-B2 saved replay
+  // logs that still carry un-normalized role strings like "THE HARMONIST"
+  // straight from the model output. New runs are normalized at the source
+  // (backend/agent_roles.py), but old saved runs aren't rewritten, so this
+  // strips a leading "THE " here too rather than falling through to a
+  // generic fallback icon for perfectly identifiable agents.
+  const raw = String(agent || "").toUpperCase().replace(/^THE\s+/, "");
   if (AGENTS[raw]) return raw;
+  if (eventType === "image_ready") return "ILLUSTRATOR";
   if (raw.startsWith("JUDGE") || eventType === "judge_score") return "JUDGES";
   if (eventType === "admission_result") return "GATE";
   if (eventType === "baseline_ready") return "BASELINE";
@@ -92,7 +132,32 @@ function agentKey(agent, eventType) {
 
 function agentMeta(agent, eventType) {
   const key = agentKey(agent, eventType);
-  return AGENTS[key] || { name: agent || "System", short: (agent || "SY").slice(0, 2), color: "var(--text-tertiary)" };
+  return AGENTS[key] || { name: agent || "System", glyph: "i-baseline", color: "var(--paper-faint)" };
+}
+
+function agentDisplayName(rawRole) {
+  return agentMeta(rawRole).name || rawRole || "Someone";
+}
+
+function truncate(text, n = 220) {
+  if (!text) return "";
+  return text.length > n ? `${text.slice(0, n)}…` : text;
+}
+
+function entryTitle(entry) {
+  return entry?.summary || entry?.full_text?.split("\n")[0] || "an unnamed entry";
+}
+
+// Every user-facing string must read the world, never its storage keys —
+// raw ids like "scene-d0571fa3" mean nothing to someone watching a story
+// get negotiated. Cited/conflicting ids always name an already-committed
+// world-bible entry, so this resolves to its human summary, falling back
+// to a generic phrase if that entry hasn't been indexed on the client yet.
+function describeEntry(id) {
+  if (!id) return "an earlier entry";
+  const entry = state.canonEntries.get(id);
+  if (entry) return truncate(entryTitle(entry), 90);
+  return "an earlier entry";
 }
 
 async function checkConnection() {
@@ -102,13 +167,13 @@ async function checkConnection() {
     const body = await res.json();
     if (res.ok && body.status === "ok") {
       statusEl.textContent = "connected";
-      statusEl.className = "status-pill status-pill--ok";
+      statusEl.className = "seal seal--ok";
     } else {
       throw new Error("unexpected /health response");
     }
   } catch (err) {
     statusEl.textContent = "offline";
-    statusEl.className = "status-pill status-pill--error";
+    statusEl.className = "seal seal--error";
     console.error("Stratum backend not reachable:", err);
   }
 }
@@ -116,20 +181,20 @@ async function checkConnection() {
 function setRunStatus(text, kind) {
   const el = document.getElementById("run-status");
   el.textContent = text;
-  el.className = `status-pill status-pill--${kind}`;
+  el.className = `seal seal--${kind}`;
 }
 
 // --- Hex map ------------------------------------------------------------
-// Per stratum-architecture-plan.md's "why a hex grid, not a free-form node
-// graph": entries carry an axial [x, y] grid_position assigned by the
-// Architect specialist; this just lays that grid out with a standard
-// pointy-top axial-to-pixel conversion and colors each cell by status.
-const HEX_SIZE = 42;
+// A fixed 12x8 grid renders in full from the first paint — every cell that
+// hasn't been admitted into canon is genuinely dark, unrevealed territory,
+// not a duller reuse of the lit style. Entries carry their real stored
+// grid_position; out-of-range values are clamped defensively rather than
+// silently dropped or laid out ad hoc.
 
 function hexToPixel(x, y) {
   return {
-    cx: HEX_SIZE * Math.sqrt(3) * (x + y / 2) + 220,
-    cy: HEX_SIZE * 1.5 * y + 100,
+    cx: HEX_SIZE * Math.sqrt(3) * (x + y / 2) + HEX_SIZE + 12,
+    cy: HEX_SIZE * 1.5 * y + HEX_SIZE + 12,
   };
 }
 
@@ -140,17 +205,22 @@ function hexPoints(cx, cy, size) {
   }).join(" ");
 }
 
-function shortHexLabel(entry) {
-  const round = entry.provenance_round ?? "?";
-  const glyph = entry.status === "canon" ? "◆" : entry.status === "rejected" ? "×" : "!";
-  return `${glyph}${round}`;
+function clampGridPosition(pos) {
+  if (!Array.isArray(pos) || pos.length < 2) return null;
+  const x = Math.max(0, Math.min(GRID_COLS - 1, Math.round(Number(pos[0]) || 0)));
+  const y = Math.max(0, Math.min(GRID_ROWS - 1, Math.round(Number(pos[1]) || 0)));
+  return [x, y];
+}
+
+function cellClass(cell) {
+  return `hex-cell hex-cell--${cell.entry ? cell.entry.status : "fog"}`;
 }
 
 function tooltipHtml(entry) {
   const title = entry.full_text?.split("\n")[0] || entry.summary || "Untitled scene";
   return `
     <div class="hex-tooltip__meta" style="--agent-color: ${agentMeta(entry.provenance_agent).color}">
-      ${escapeHtml(entry.provenance_agent)} · round ${escapeHtml(entry.provenance_round)} · ${escapeHtml(entry.status)}
+      ${escapeHtml(agentDisplayName(entry.provenance_agent))} · round ${escapeHtml(entry.provenance_round)} · ${escapeHtml(entry.status)}
     </div>
     <strong>${escapeHtml(title)}</strong>
     <div class="hex-tooltip__summary">${escapeHtml(entry.summary)}</div>
@@ -159,7 +229,7 @@ function tooltipHtml(entry) {
 
 function showHexTooltip(event, entry) {
   const tooltip = document.getElementById("hex-tooltip");
-  const panel = document.querySelector(".map-panel");
+  const panel = document.querySelector(".stage__map");
   if (!tooltip || !panel) return;
   const panelRect = panel.getBoundingClientRect();
   const sourceRect = event.currentTarget.getBoundingClientRect();
@@ -178,76 +248,139 @@ function hideHexTooltip() {
 
 function renderHexMap(entries) {
   const container = d3.select("#hex-map");
-  container.selectAll("svg").remove();
   hideHexTooltip();
 
-  const positioned = entries.filter((e) => Array.isArray(e.grid_position));
-  if (positioned.length === 0) return;
+  // ponytail: last-write-wins on a grid-cell collision (two entries
+  // clamping to the same [x, y], observed in real runs). A proper fix
+  // would have the Architect specialist check occupancy before assigning
+  // grid_position; upgrade path if collisions turn out to be common.
+  const occupantByCell = new Map();
+  const sorted = [...entries].sort((a, b) => (a.provenance_round ?? 0) - (b.provenance_round ?? 0));
+  for (const entry of sorted) {
+    const pos = clampGridPosition(entry.grid_position);
+    if (!pos) continue;
+    occupantByCell.set(`${pos[0]}:${pos[1]}`, entry);
+  }
 
-  const svg = container.append("svg").attr("viewBox", "0 0 900 700");
-  const defs = svg.append("defs");
+  const cells = [];
+  for (let y = 0; y < GRID_ROWS; y++) {
+    for (let x = 0; x < GRID_COLS; x++) {
+      const key = `${x}:${y}`;
+      cells.push({ key, x, y, entry: occupantByCell.get(key) || null });
+    }
+  }
 
-  const cells = svg
+  const { cx: maxCx, cy: maxCy } = hexToPixel(GRID_COLS - 1, GRID_ROWS - 1);
+  const pad = HEX_SIZE * 1.6;
+
+  let svg = container.select("svg");
+  if (svg.empty()) {
+    svg = container.append("svg");
+    const defs = svg.append("defs");
+    // Fog-of-war hatch: a diagonal-line pattern (a real drafting-table
+    // convention for "unspecified/TBD" area) so unrevealed hexes read as
+    // deliberately obscured territory, not just empty background with a
+    // faint outline — the flat near-background fill alone didn't read as
+    // "fog" in review screenshots even though the mechanism was real.
+    const fogPattern = defs
+      .append("pattern")
+      .attr("id", "fog-hatch")
+      .attr("patternUnits", "userSpaceOnUse")
+      .attr("width", 10)
+      .attr("height", 10)
+      .attr("patternTransform", "rotate(45)");
+    fogPattern.append("rect").attr("width", 10).attr("height", 10).attr("fill", "var(--blue-1)");
+    fogPattern
+      .append("line")
+      .attr("x1", 0)
+      .attr("y1", 0)
+      .attr("x2", 0)
+      .attr("y2", 10)
+      .attr("stroke", "var(--line-soft)")
+      .attr("stroke-width", 1.5);
+  }
+  svg.attr("viewBox", `0 0 ${maxCx + pad} ${maxCy + pad}`);
+  const defs = svg.select("defs");
+
+  const newlyRevealed = [];
+
+  const groups = svg
     .selectAll("g.hex-cell")
-    .data(positioned, (d) => d.id)
-    .join("g")
-    .attr("class", (d) => `hex-cell hex-cell--${d.status}`)
-    .attr("tabindex", "0")
-    .attr("role", "button")
-    .attr("aria-label", (d) => `${d.status} scene, round ${d.provenance_round}: ${d.summary}`);
+    .data(cells, (d) => d.key)
+    .join((enter) => enter.append("g").attr("class", cellClass));
 
-  cells.each(function (d) {
+  groups.each(function (d) {
     const g = d3.select(this);
-    const [x, y] = d.grid_position;
-    const { cx, cy } = hexToPixel(x, y);
-    const points = hexPoints(cx, cy, HEX_SIZE);
+    const wasRevealed = g.classed("hex-cell--canon") || g.classed("hex-cell--contested");
+    const status = d.entry ? d.entry.status : "fog";
+    const nowRevealed = status !== "fog";
+    if (!wasRevealed && nowRevealed) newlyRevealed.push(d);
 
-    // A scene with a generated illustration (backend.agents.illustrator)
-    // fills its hex with the image via an SVG pattern instead of the flat
-    // status color — per the demo script's "the illustration populates the
-    // hex" beat. Falls back to the plain colored hex otherwise, so a scene
-    // whose image failed or hasn't arrived yet (image generation runs
-    // concurrently, see backend/orchestrator.py) still renders normally.
-    if (d.image_url) {
-      const patternId = `hex-image-${d.id}`;
-      defs
-        .append("pattern")
-        .attr("id", patternId)
-        .attr("patternUnits", "userSpaceOnUse")
-        .attr("x", cx - HEX_SIZE)
-        .attr("y", cy - HEX_SIZE)
-        .attr("width", HEX_SIZE * 2)
-        .attr("height", HEX_SIZE * 2)
-        .append("image")
-        .attr("href", d.image_url)
-        .attr("width", HEX_SIZE * 2)
-        .attr("height", HEX_SIZE * 2)
-        .attr("preserveAspectRatio", "xMidYMid slice");
+    g.attr("class", cellClass(d))
+      .attr("tabindex", nowRevealed ? "0" : null)
+      .attr("role", nowRevealed ? "button" : null)
+      .attr("aria-label", nowRevealed ? `${status} scene, round ${d.entry.provenance_round}: ${d.entry.summary}` : null)
+      .attr("aria-hidden", nowRevealed ? null : "true")
+      .on("mouseenter.tip focus.tip", nowRevealed ? (event) => showHexTooltip(event, d.entry) : null)
+      .on("mouseleave.tip blur.tip", nowRevealed ? hideHexTooltip : null);
 
-      g.append("polygon")
-        .attr("class", "hex-cell__poly")
-        .attr("points", points)
-        // .style(), not .attr(): an SVG presentation attribute like
-        // fill="..." loses to any matching CSS class rule (e.g.
-        // .hex-cell--canon .hex-cell__poly's fill in style.css), but an
-        // inline style wins — needed here so the image pattern actually
-        // replaces the status color instead of being silently overridden.
-        .style("fill", `url(#${patternId})`);
+    g.selectAll("*").remove();
+
+    const { cx, cy } = hexToPixel(d.x, d.y);
+    const points = hexPoints(cx, cy, HEX_SIZE - 2);
+
+    if (d.entry?.image_url) {
+      const patternId = `hex-image-${domIdPart(d.entry.id)}`;
+      if (defs.select(`#${patternId}`).empty()) {
+        defs
+          .append("pattern")
+          .attr("id", patternId)
+          .attr("patternUnits", "userSpaceOnUse")
+          .attr("x", cx - HEX_SIZE)
+          .attr("y", cy - HEX_SIZE)
+          .attr("width", HEX_SIZE * 2)
+          .attr("height", HEX_SIZE * 2)
+          .append("image")
+          .attr("href", d.entry.image_url)
+          .attr("width", HEX_SIZE * 2)
+          .attr("height", HEX_SIZE * 2)
+          .attr("preserveAspectRatio", "xMidYMid slice");
+      }
+      g.append("polygon").attr("class", "hex-cell__poly").attr("points", points).style("fill", `url(#${patternId})`);
     } else {
       g.append("polygon").attr("class", "hex-cell__poly").attr("points", points);
     }
 
-    g.append("title").text(`[${d.provenance_agent} · round ${d.provenance_round} · ${d.status}]\n${d.summary}`);
-
-    g.append("text")
-      .attr("class", "hex-cell__label")
-      .attr("text-anchor", "middle")
-      .attr("x", cx)
-      .attr("y", cy + 4)
-      .text(shortHexLabel(d));
-
-    g.on("mouseenter focus", (event) => showHexTooltip(event, d)).on("mouseleave blur", hideHexTooltip);
+    if (nowRevealed) {
+      g.append("title").text(
+        `[${agentDisplayName(d.entry.provenance_agent)} · round ${d.entry.provenance_round} · ${status}]\n${d.entry.summary}`
+      );
+      // Tucked into a corner with its own backdrop, not dead-center on the
+      // hex, so the round-number label stays legible against a busy scene
+      // illustration and doesn't visually collide with a neighboring hex's
+      // label when several revealed hexes cluster tightly together.
+      const labelX = cx - HEX_SIZE * 0.5;
+      const labelY = cy - HEX_SIZE * 0.5;
+      g.append("circle").attr("class", "hex-cell__label-backdrop").attr("cx", labelX).attr("cy", labelY).attr("r", 8);
+      g.append("text")
+        .attr("class", "hex-cell__label")
+        .attr("text-anchor", "middle")
+        .attr("x", labelX)
+        .attr("y", labelY + 3)
+        .text(d.entry.provenance_round ?? "");
+    }
   });
+
+  // Fog visibly recedes at the moment of admission rather than a static
+  // swap: a brief brightness pulse on the hex itself plus a one-shot flash
+  // burst radiating from its center.
+  for (const d of newlyRevealed) {
+    const g = svg.selectAll("g.hex-cell").filter((dd) => dd.key === d.key);
+    g.classed("hex-cell--reveal", true);
+    const { cx, cy } = hexToPixel(d.x, d.y);
+    g.append("circle").attr("class", "hex-cell__flash").attr("cx", cx).attr("cy", cy).attr("r", HEX_SIZE * 0.85);
+    window.setTimeout(() => g.classed("hex-cell--reveal", false), 900);
+  }
 }
 
 async function refreshWorld() {
@@ -255,10 +388,16 @@ async function refreshWorld() {
   const res = await fetch(`${API_BASE}/api/world/${state.runId}`);
   if (!res.ok) return;
   const body = await res.json();
+  for (const entry of body.entries) {
+    state.canonEntries.set(entry.id, { ...state.canonEntries.get(entry.id), ...entry });
+  }
+  renderCanonLedger();
+  renderComparison();
+  renderScorecard();
   renderHexMap(body.entries.filter((e) => e.provenance_round <= state.maxRoundSeen));
 }
 
-// --- Debate log -----------------------------------------------------------
+// --- Roster ---------------------------------------------------------------
 
 function initRoster() {
   const list = document.getElementById("roster-list");
@@ -272,7 +411,7 @@ function initRoster() {
       chip.dataset.agent = key;
       chip.style.setProperty("--agent-color", meta.color);
       chip.innerHTML = `
-        <span class="roster-chip__avatar" aria-hidden="true">${escapeHtml(meta.short)}</span>
+        <span class="roster-chip__avatar" aria-hidden="true">${glyphHtml(meta.glyph)}</span>
         <span class="roster-chip__meta">
           <span class="roster-chip__name">${escapeHtml(meta.name)}</span>
           <span class="roster-chip__role">idle</span>
@@ -304,43 +443,110 @@ function finishRoster(status) {
 
 function updateRosterForEvent(eventType, payload, agent) {
   const byType = {
-    seed_entry: ["GATE", "seeded"],
     proposal: [payload.role || agent, "proposing"],
     critique: [payload.critic_role || agent, "critiquing"],
     judge_score: ["JUDGES", "judging"],
     synthesis: ["ARBITER", "synthesizing"],
     admission_result: ["GATE", payload.admitted ? "admitted" : "rejected", payload.admitted ? "admit" : "reject"],
     human_injection: ["HUMAN", "injected"],
-    baseline_ready: ["JUDGES", "scored"],
     scene_failed: ["ARBITER", "failed"],
-    image_ready: ["GATE", "illustrated"],
-    run_complete: ["ARBITER", payload.status === "done" ? "complete" : "failed"],
   }[eventType];
   if (byType) setRosterStatus(...byType);
 }
 
+// --- Scene indicator + moment marquee -------------------------------------
+
 function updateSceneIndicator(eventType, scene) {
-  if (!scene && scene !== 0) return;
+  if (scene === undefined || scene === null) return;
   state.currentScene = scene;
-  const phase = PHASE_BY_EVENT[eventType];
-  if (phase) {
-    const phases = state.scenePhases.get(scene) || [];
-    if (!phases.includes(phase)) phases.push(phase);
-    state.scenePhases.set(scene, phases);
-  }
   const el = document.getElementById("scene-indicator");
   if (!el) return;
-  const phases = state.scenePhases.get(scene) || [];
-  el.textContent = phases.length ? `Scene ${scene} · ${phases.join(" → ")}` : `Scene ${scene}`;
+  el.textContent = scene === 0 ? "Foundation" : `Scene ${scene}`;
 }
 
 function finishSceneIndicator(status) {
   const el = document.getElementById("scene-indicator");
   if (!el) return;
-  const scenes = Array.from(state.timelineScenes.keys()).filter((scene) => scene || scene === 0);
+  const scenes = Array.from(state.timelineScenes.keys());
   const finalScene = scenes.length ? Math.max(...scenes) : state.currentScene;
   const prefix = finalScene || finalScene === 0 ? `Scene ${finalScene}` : "Replay";
   el.textContent = status === "done" ? `${prefix} · Complete` : `${prefix} · Failed`;
+}
+
+function updateMomentHeadline(eventType, payload = {}, meta = {}) {
+  const el = document.getElementById("moment-headline");
+  if (!el) return;
+  let text = null;
+  switch (eventType) {
+    case "seed_entry":
+      text = `The world bible gains its foundation: "${truncate(payload.summary, 120)}"`;
+      break;
+    case "proposal":
+      text = `${agentDisplayName(payload.role)} proposes "${truncate(payload.scene_title || payload.summary, 110)}."`;
+      break;
+    case "critique":
+      text = `${agentDisplayName(payload.critic_role)} objects to ${agentDisplayName(payload.target_role)}'s proposal${payload.hard_flag ? " — a hard flag." : "."}`;
+      break;
+    case "judge_score":
+      text = `The ${payload.dimension} judge scores ${agentDisplayName(payload.role_scored)}'s proposal ${payload.score}/10.`;
+      break;
+    case "synthesis":
+      text = `The Arbiter rules: ${truncate(payload.synthesis_notes, 140)}`;
+      break;
+    case "admission_result":
+      text = payload.admitted
+        ? `Scene ${meta.scene} is admitted into canon.`
+        : `Contradiction caught — Scene ${meta.scene} is sent back for revision.`;
+      break;
+    case "human_injection":
+      text = `A human constraint is woven into canon: "${truncate(payload.full_text, 120)}"`;
+      break;
+    case "scene_failed":
+      text = `Scene ${meta.scene} could not converge after repeated revisions and was skipped.`;
+      break;
+    case "image_ready":
+      text = `An illustration resolves for ${describeEntry(payload.entry_id)}.`;
+      break;
+    case "baseline_ready":
+      text = "The single-shot baseline finishes, for comparison.";
+      break;
+    case "run_complete":
+      text =
+        payload.status === "done"
+          ? "The negotiation concludes. The world is settled — for now."
+          : `The run failed: ${payload.error || "an unknown error."}`;
+      break;
+    default:
+      return;
+  }
+  el.textContent = text;
+}
+
+// --- Agent timeline: rounds within a scene, grouped and labeled ----------
+//
+// Real per-scene cardinality (see backend/negotiation.py): 4 specialist
+// proposals, 4 cross-critiques, 4 dimension-judge calls (one real batched
+// call per dimension, scoring all 4 proposals at once — the backend now
+// emits this as a single judge_score event carrying all 16 scores, not 16
+// separate events), 1 Arbiter synthesis, 1 gate check — per attempt. A
+// rejection starts a genuinely new attempt with its own full set of those
+// calls.
+//
+// Every DebateEvent now carries a real `attempt` field from the backend
+// (see backend/schemas.py), so a NEW run's retries are tagged
+// authoritatively rather than inferred. Saved replays from before that
+// fix still parse fine but report `attempt: 1` for every event (Pydantic
+// default) — for those, state.sceneAttempt's local inference (bumped by
+// one right after an admission_result rejection is logged for a scene)
+// is kept as a fallback so historical demo recordings still show their
+// real retry structure. combineAttempt takes whichever signal is higher.
+
+function currentAttempt(scene) {
+  return state.sceneAttempt.get(scene) || 1;
+}
+
+function combineAttempt(backendAttempt, scene) {
+  return Math.max(backendAttempt || 1, currentAttempt(scene));
 }
 
 function phaseTone(eventType, payload = {}) {
@@ -351,77 +557,149 @@ function phaseTone(eventType, payload = {}) {
 }
 
 function trackTimelineEvent(eventType, payload = {}, meta = {}) {
+  if (NON_SCENE_EVENTS.has(eventType)) return;
   const scene = meta.scene;
-  if (!scene && scene !== 0) return;
+  if ((!scene && scene !== 0) || scene === 0) return;
+  const attempt = meta.attempt || 1;
   const agent = agentKey(meta.agent || payload.role || payload.critic_role, eventType);
-  const sceneState = state.timelineScenes.get(scene) || { events: [], retry: false, resolved: false };
-  if (eventType === "admission_result" && !payload.admitted) sceneState.retry = true;
-  if (eventType === "admission_result" && payload.admitted) sceneState.resolved = true;
-  sceneState.events.push({
+  const sceneState = state.timelineScenes.get(scene) || { rounds: new Map(), retry: false, resolved: false, failed: false };
+  const roundState = sceneState.rounds.get(attempt) || { events: [], dimensionsSeen: new Set() };
+
+  if (eventType === "judge_score") {
+    // One judge dimension = one real batched API call scoring all four
+    // proposals at once — represent that call as a single badge, not four.
+    if (roundState.dimensionsSeen.has(payload.dimension)) {
+      sceneState.rounds.set(attempt, roundState);
+      state.timelineScenes.set(scene, sceneState);
+      return;
+    }
+    roundState.dimensionsSeen.add(payload.dimension);
+  }
+
+  if (eventType === "admission_result") {
+    if (payload.admitted) sceneState.resolved = true;
+    else sceneState.retry = true;
+  }
+  if (eventType === "scene_failed") sceneState.failed = true;
+
+  // Specialist-vs-specialist disagreement, tracked per round so browsing
+  // the timeline afterwards shows exactly where it happened — not just a
+  // toast someone had to be watching live to catch. Two independent
+  // signals: a Harmonist hard flag (a critique, before resolution) and an
+  // Arbiter synthesis that names a real overruled_role (the resolution).
+  // Either alone is worth flagging; a round can have both.
+  if (eventType === "critique" && payload.hard_flag) {
+    roundState.disagreement = true;
+    roundState.disagreementReason = `${agentDisplayName(payload.critic_role)} hard-flags ${agentDisplayName(payload.target_role)}: ${payload.objection || ""}`;
+  }
+  if (eventType === "synthesis" && payload.overruled_role) {
+    roundState.disagreement = true;
+    roundState.disagreementReason = `Arbiter overruled ${agentDisplayName(payload.overruled_role)} in favor of ${agentDisplayName(payload.favored_role)}: ${payload.synthesis_notes || ""}`;
+  }
+
+  roundState.events.push({
     type: eventType,
     agent,
     stage: EVENT_STAGE[eventType] || eventType.replace(/_/g, " "),
     tone: phaseTone(eventType, payload),
   });
+  sceneState.rounds.set(attempt, roundState);
   state.timelineScenes.set(scene, sceneState);
   renderTimeline();
+}
+
+function sceneStatusLabel(sceneState) {
+  if (sceneState.failed) return { text: "could not converge — skipped", cls: "caught" };
+  if (sceneState.retry && sceneState.resolved) return { text: "caught → resolved after retry", cls: "resolved" };
+  if (sceneState.retry) return { text: "contradiction caught — retrying", cls: "caught" };
+  if (sceneState.resolved) return { text: "admitted on first pass", cls: "resolved" };
+  return { text: "negotiating", cls: "" };
 }
 
 function renderTimeline() {
   const timeline = document.getElementById("agent-timeline");
   if (!timeline) return;
+
+  const blocks = [];
+
+  if (state.foundationCount > 0) {
+    const injected = state.humanInjectionCount
+      ? ` · ${state.humanInjectionCount} human ${state.humanInjectionCount === 1 ? "constraint" : "constraints"} injected`
+      : "";
+    blocks.push(`
+      <div class="agent-timeline__foundation">
+        ${glyphHtml("i-sprout")}
+        <span>Foundation — ${state.foundationCount} world-bible ${state.foundationCount === 1 ? "entry" : "entries"} seeded${injected}</span>
+      </div>
+    `);
+  }
+
   if (state.timelineScenes.size === 0) {
-    timeline.innerHTML = '<p class="agent-timeline__empty">Waiting for negotiation events.</p>';
+    if (blocks.length === 0) {
+      timeline.innerHTML = '<p class="agent-timeline__empty">Waiting for negotiation events.</p>';
+      return;
+    }
+    timeline.innerHTML = blocks.join("");
     return;
   }
 
-  // ponytail: timeline is client event-order only; upgrade path is backend
-  // attempt IDs/timestamps if cross-tab replay fidelity becomes important.
-  timeline.innerHTML = Array.from(state.timelineScenes.entries())
+  const sceneBlocks = Array.from(state.timelineScenes.entries())
     .sort(([a], [b]) => a - b)
     .map(([scene, sceneState]) => {
-      const cells = sceneState.events
-        .slice(-18)
-        .map((event) => {
-          const meta = agentMeta(event.agent, event.type);
+      const status = sceneStatusLabel(sceneState);
+      const rounds = Array.from(sceneState.rounds.entries())
+        .sort(([a], [b]) => a - b)
+        .map(([attempt, roundState]) => {
+          const cells = roundState.events
+            .map((event) => {
+              const meta = agentMeta(event.agent, event.type);
+              return `
+                <span
+                  class="agent-timeline__cell agent-timeline__cell--${escapeHtml(event.tone)}"
+                  style="--agent-color: ${meta.color}"
+                  title="${escapeHtml(meta.name)} · ${escapeHtml(event.stage)}"
+                  role="img"
+                  aria-label="${escapeHtml(meta.name)} ${escapeHtml(event.stage)}"
+                >${glyphHtml(meta.glyph)}</span>
+              `;
+            })
+            .join("");
+          const label = attempt > 1 ? `Round ${attempt}` : "Round 1";
+          const disagreementBadge = roundState.disagreement
+            ? `<span class="agent-timeline__round-disagreement" title="${escapeHtml(roundState.disagreementReason || "Specialists disagreed this round.")}">⚔ disagreement</span>`
+            : "";
           return `
-            <span
-              class="agent-timeline__cell agent-timeline__cell--${escapeHtml(event.tone)}"
-              style="--agent-color: ${meta.color}"
-              title="${escapeHtml(meta.name)} · ${escapeHtml(event.stage)}"
-              aria-label="${escapeHtml(meta.name)} ${escapeHtml(event.stage)}"
-            >${escapeHtml(meta.short)}</span>
+            <div class="agent-timeline__round ${attempt > 1 ? "agent-timeline__round--retry" : ""}">
+              <span class="agent-timeline__round-label">${escapeHtml(label)}</span>
+              <span class="agent-timeline__cells">${cells}</span>
+              ${disagreementBadge}
+            </div>
           `;
         })
         .join("");
-      const status = sceneState.retry
-        ? sceneState.resolved
-          ? "caught → resolved"
-          : "gate catch"
-        : sceneState.resolved
-          ? "admitted"
-          : "negotiating";
       return `
-        <div class="agent-timeline__row">
-          <div class="agent-timeline__scene">
+        <div class="agent-timeline__scene-block">
+          <div class="agent-timeline__scene-head">
             <strong>Scene ${escapeHtml(scene)}</strong>
-            <span>${escapeHtml(status)}</span>
+            <span class="agent-timeline__scene-status agent-timeline__scene-status--${status.cls}">${escapeHtml(status.text)}</span>
           </div>
-          <div class="agent-timeline__cells">${cells}</div>
+          ${rounds}
         </div>
       `;
     })
     .join("");
+
+  blocks.push(sceneBlocks);
+  timeline.innerHTML = blocks.join("");
 }
 
-function entryTitle(entry) {
-  return entry.summary || entry.full_text?.split("\n")[0] || entry.id || "Untitled entry";
-}
+// --- World bible list/detail ----------------------------------------------
 
 function rememberCanonEntry(entry, source = "admitted") {
   if (!entry?.id) return;
   state.canonEntries.set(entry.id, { ...state.canonEntries.get(entry.id), ...entry, ledger_source: source });
   renderCanonLedger();
+  renderComparison();
   renderScorecard();
 }
 
@@ -431,7 +709,6 @@ function markCanonImage(entryId, imageUrl) {
   if (!existing) return;
   state.canonEntries.set(entryId, { ...existing, image_url: imageUrl || existing.image_url });
   renderCanonLedger();
-  renderScorecard();
 }
 
 async function refreshCanonEntry(entryId, attempts = 3) {
@@ -454,42 +731,74 @@ function renderCanonLedger() {
   const list = document.getElementById("canon-ledger-list");
   const count = document.getElementById("canon-ledger-count");
   if (!list || !count) return;
-  const entries = Array.from(state.canonEntries.values())
-    .filter((entry) => entry.status === "canon")
-    .sort((a, b) => (a.provenance_round ?? 0) - (b.provenance_round ?? 0));
-  count.textContent = `${entries.length} admitted`;
+  const entries = Array.from(state.canonEntries.values()).sort((a, b) => (a.provenance_round ?? 0) - (b.provenance_round ?? 0));
+  const canonCount = entries.filter((entry) => entry.status === "canon").length;
+  count.textContent = `${canonCount} admitted`;
   if (entries.length === 0) {
-    list.innerHTML = '<li class="canon-ledger__empty">Admitted scenes will accumulate here.</li>';
+    list.innerHTML = '<li class="canon-ledger__empty">Entries will accumulate here as the world is negotiated.</li>';
     return;
   }
   list.innerHTML = entries
     .map((entry) => {
       const meta = agentMeta(entry.provenance_agent);
-      const markers = [
-        entry.image_url ? "image" : null,
-        entry.ledger_source === "seed" ? "seed" : "canon",
-      ].filter(Boolean);
       return `
-        <li class="canon-ledger__item" style="--agent-color: ${meta.color}">
-          <span class="canon-ledger__round">S${escapeHtml(entry.provenance_round ?? 0)}</span>
-          <div class="canon-ledger__body">
-            <strong>${escapeHtml(truncate(entryTitle(entry), 88))}</strong>
-            <span>${escapeHtml(meta.name)} · ${markers.map(escapeHtml).join(" · ")}</span>
-          </div>
+        <li>
+          <button type="button" class="canon-ledger__item" style="--agent-color: ${meta.color}" data-entry-id="${escapeHtml(entry.id)}">
+            <span class="canon-ledger__round">S${escapeHtml(entry.provenance_round ?? 0)}</span>
+            <span class="canon-ledger__body">
+              <strong>${escapeHtml(truncate(entryTitle(entry), 88))}</strong>
+              <span>${escapeHtml(agentDisplayName(entry.provenance_agent))} · ${escapeHtml(entry.status)}</span>
+            </span>
+          </button>
         </li>
       `;
     })
     .join("");
 }
 
+function showEntryDetail(entryId) {
+  const entry = state.canonEntries.get(entryId);
+  const panel = document.getElementById("entry-detail");
+  if (!panel || !entry) return;
+  const meta = agentMeta(entry.provenance_agent);
+  panel.hidden = false;
+  panel.innerHTML = `
+    <div class="entry-detail__meta">${escapeHtml(agentDisplayName(entry.provenance_agent))} · round ${escapeHtml(entry.provenance_round ?? 0)} · ${escapeHtml(entry.status)}</div>
+    <h4 style="color: ${meta.color}">${escapeHtml(entryTitle(entry))}</h4>
+    <p>${escapeHtml(entry.full_text || entry.summary || "")}</p>
+  `;
+  panel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+// --- Debate log -------------------------------------------------------------
+
 function appendSceneDivider(scene) {
-  if (!scene || state.lastLoggedScene === scene) return;
-  state.lastLoggedScene = scene;
+  if (scene === undefined || scene === null) return;
   const log = document.getElementById("debate-log");
+  if (scene === 0) {
+    if (state.foundationDividerShown) return;
+    state.foundationDividerShown = true;
+    const divider = document.createElement("div");
+    divider.className = "scene-divider foundation-divider";
+    divider.textContent = "Foundation";
+    log.appendChild(divider);
+    return;
+  }
+  if (state.lastLoggedScene === scene) return;
+  state.lastLoggedScene = scene;
   const divider = document.createElement("div");
   divider.className = "scene-divider";
   divider.textContent = `Scene ${scene}`;
   log.appendChild(divider);
+}
+
+function appendRoundDivider(scene, nextAttempt) {
+  const log = document.getElementById("debate-log");
+  const divider = document.createElement("div");
+  divider.className = "round-divider";
+  divider.textContent = `↻ Renegotiation — Scene ${scene}, Round ${nextAttempt}`;
+  log.appendChild(divider);
+  log.scrollTop = log.scrollHeight;
 }
 
 function detailsHtml(summary, text) {
@@ -524,9 +833,12 @@ function appendDebateEntry(eventType, agent, bodyHtml, options = {}) {
   if (options.focusable) entry.tabIndex = -1;
 
   const retryBadge = options.retry ? `<span class="entry__event-badge">↻ Retry</span>` : "";
-  const sub = options.scene ? `<span class="entry__sub">scene ${escapeHtml(options.scene)}</span>` : "";
+  const sub =
+    options.scene || options.scene === 0
+      ? `<span class="entry__sub">${options.scene === 0 ? "foundation" : `scene ${escapeHtml(options.scene)}`}</span>`
+      : "";
   entry.innerHTML = `
-    <div class="entry__avatar" aria-hidden="true">${escapeHtml(meta.short)}</div>
+    <div class="entry__avatar" aria-hidden="true">${glyphHtml(meta.glyph)}</div>
     <div class="entry__body">
       <div class="entry__head">
         <span class="entry__agent-name">${escapeHtml(meta.name)}</span>
@@ -540,15 +852,57 @@ function appendDebateEntry(eventType, agent, bodyHtml, options = {}) {
   `;
   log.appendChild(entry);
   log.scrollTop = log.scrollHeight;
+  return entry;
 }
 
-function truncate(text, n = 220) {
-  if (!text) return "";
-  return text.length > n ? `${text.slice(0, n)}…` : text;
+// Judge scores stream in one-per-proposal, but one dimension judge makes
+// exactly one real batched call per scene attempt (see backend/agents/
+// judges.py — score_all scores all 4 proposals in a single chat_json
+// call). Group by (scene, attempt, dimension) into a single,
+// incrementally-updating transcript entry and timeline badge instead of
+// exploding each of the 16 raw judge_score events into its own unit.
+const judgeScoreAccumulator = new Map();
+
+function accumulateJudgeScore(scene, attempt, dimension, scorePayload) {
+  const key = `${scene}:${attempt}:${dimension}`;
+  const scores = judgeScoreAccumulator.get(key) || [];
+  scores.push(scorePayload);
+  judgeScoreAccumulator.set(key, scores);
+  return scores;
 }
 
-function retrying(scene, eventType) {
-  return state.retryScenes.has(scene) && ["proposal", "critique", "synthesis", "judge_score"].includes(eventType);
+function judgeGroupBodyHtml(scores) {
+  return scores
+    .map(
+      (s) => `
+        <div class="judge-score-row">
+          <span>${escapeHtml(agentDisplayName(s.role_scored))}</span>
+          <span>${escapeHtml(s.score)}/10</span>
+        </div>
+        ${detailsHtml("Read rationale", s.rationale)}
+      `
+    )
+    .join("");
+}
+
+function renderJudgeGroup(scene, attempt, dimension, scores) {
+  const id = `judge-group-${domIdPart(`${scene}-${attempt}-${dimension}`)}`;
+  const el = document.getElementById(id);
+  const bodyHtml = judgeGroupBodyHtml(scores);
+  if (el) {
+    el.querySelector(".entry__content").innerHTML = bodyHtml;
+    const badge = el.querySelectorAll(".entry__event-badge")[0];
+    if (badge) badge.textContent = `${dimension} verdict · ${scores.length}/4 scored`;
+    return;
+  }
+  const created = appendDebateEntry("judge_score", "JUDGES", bodyHtml, {
+    scene,
+    id,
+    retry: attempt > 1,
+    chips: [{ label: dimension, tone: "" }, attempt > 1 ? { label: `round ${attempt}`, tone: "warn" } : null],
+  });
+  const badge = created.querySelectorAll(".entry__event-badge")[0];
+  if (badge) badge.textContent = `${dimension} verdict · ${scores.length}/4 scored`;
 }
 
 function showGateBanner(payload, scene) {
@@ -560,24 +914,58 @@ function showGateBanner(payload, scene) {
   if (!banner || !title || !detail || !icon) return;
   clearTimeout(state.gateBannerTimer);
   banner.hidden = false;
+  banner.classList.remove("gate-banner--caught-toast");
   banner.classList.toggle("gate-banner--reject", !payload.admitted);
   banner.classList.toggle("gate-banner--admit", Boolean(payload.admitted));
-  icon.textContent = payload.admitted ? "✓" : "!";
-  title.textContent = payload.admitted ? `Scene ${scene} admitted after review` : `Scene ${scene} contradiction caught`;
+  icon.textContent = payload.admitted ? "✓" : "✕";
+  title.textContent = payload.admitted ? `Scene ${scene} admitted after review` : `Contradiction caught — Scene ${scene}`;
   detail.textContent = payload.admitted
-    ? `Resolved through renegotiation. ${payload.reason || "Candidate no longer conflicts with canon."}`
-    : `${payload.conflicting_entry_id ? `Conflicts with ${payload.conflicting_entry_id}. ` : ""}${payload.reason || "Contradiction detected."} Specialists will retry this scene.`;
+    ? `Resolved through renegotiation. ${payload.reason || "The candidate no longer conflicts with canon."}`
+    : `Conflicts with ${describeEntry(payload.conflicting_entry_id)}. ${payload.reason || "A contradiction was detected."} Specialists are already revising.`;
   if (announcer) announcer.textContent = `${title.textContent}. ${detail.textContent}`;
-  const panel = document.querySelector(".map-panel");
-  panel?.classList.toggle("map-panel--flash", !payload.admitted);
-  panel?.classList.toggle("map-panel--settle", Boolean(payload.admitted));
-  window.setTimeout(() => panel?.classList.remove("map-panel--flash", "map-panel--settle"), 700);
+
   if (payload.admitted) {
     state.gateBannerTimer = window.setTimeout(() => {
       banner.hidden = true;
       banner.classList.remove("gate-banner--admit");
-    }, 2400);
+    }, 2600);
+  } else {
+    // Genuinely screen-dominant for a few seconds — the single most
+    // dramatic mechanic in the system — then recedes to a persistent
+    // corner flag so the retry that follows is still visible underneath.
+    state.gateBannerTimer = window.setTimeout(() => {
+      banner.classList.remove("gate-banner--reject");
+      banner.classList.add("gate-banner--caught-toast");
+    }, 3400);
   }
+}
+
+function showDisagreementBanner(payload, scene) {
+  // Fires on the Arbiter's own ruling (a real overruled_role), the moment
+  // a specialist-vs-specialist clash actually gets resolved — the live
+  // counterpart to the persistent "⚔ disagreement" timeline badge above.
+  const banner = document.getElementById("disagreement-banner");
+  const title = document.getElementById("disagreement-banner-title");
+  const detail = document.getElementById("disagreement-banner-detail");
+  const announcer = document.getElementById("live-announcer");
+  if (!banner || !title || !detail) return;
+  clearTimeout(state.disagreementBannerTimer);
+  banner.hidden = false;
+  title.textContent = `Scene ${scene} — Arbiter overrules ${agentDisplayName(payload.overruled_role)}`;
+  detail.textContent = `Favored ${agentDisplayName(payload.favored_role)}. ${truncate(payload.synthesis_notes, 120)}`;
+  if (announcer) announcer.textContent = `${title.textContent}. ${detail.textContent}`;
+  state.disagreementBannerTimer = window.setTimeout(() => {
+    banner.hidden = true;
+  }, 4200);
+}
+
+function triggerStageTremor() {
+  const stage = document.querySelector(".stage");
+  if (!stage) return;
+  stage.classList.remove("stage--tremor");
+  void stage.getBoundingClientRect();
+  stage.classList.add("stage--tremor");
+  window.setTimeout(() => stage.classList.remove("stage--tremor"), 520);
 }
 
 function updateGateJump() {
@@ -599,13 +987,55 @@ function jumpToGateCatch() {
   }
 }
 
-function shakeContestedHexes() {
-  document.querySelectorAll(".hex-cell--contested, .hex-cell--rejected").forEach((cell) => {
-    cell.classList.remove("hex-cell--shake");
-    void cell.getBoundingClientRect();
-    cell.classList.add("hex-cell--shake");
-    window.setTimeout(() => cell.classList.remove("hex-cell--shake"), 700);
-  });
+// --- Baseline comparison + scorecard ---------------------------------------
+
+function renderComparison() {
+  const stratumEl = document.getElementById("stratum-text");
+  if (!stratumEl) return;
+  const canonEntries = Array.from(state.canonEntries.values())
+    .filter((entry) => entry.status === "canon")
+    .sort((a, b) => (a.provenance_round ?? 0) - (b.provenance_round ?? 0));
+  stratumEl.textContent = canonEntries.length
+    ? canonEntries.map((entry) => entry.full_text || entry.summary).join("\n\n")
+    : "Waiting for admitted scenes…";
+}
+
+// Renders the baseline column paragraph-by-paragraph so a self-contradiction
+// is something a reader SEES (a flagged paragraph, the earlier paragraph it
+// conflicts with, and the gate's real reason) rather than something they
+// have to take on faith from an abstract contradiction_rate percentage. Per
+// stratum-critical-review-checklist.md's "numbers won't interest judges"
+// finding — this is the visual proof, backend.metrics.compute_comparison's
+// contradiction_detail is the evidence behind it.
+function renderBaselineText() {
+  const el = document.getElementById("baseline-text");
+  if (!el) return;
+  if (!state.baselineText) {
+    el.textContent = "Waiting for the baseline generation…";
+    return;
+  }
+  const paragraphs = state.baselineText.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  const detail = state.metrics?.contradiction_detail?.baseline || [];
+  const detailByIndex = new Map(detail.map((d) => [d.index, d]));
+
+  el.innerHTML = paragraphs
+    .map((paragraph, i) => {
+      const flag = detailByIndex.get(i);
+      if (!flag || !flag.contradicts) {
+        return `<span class="comparison__paragraph">${escapeHtml(paragraph)}</span>`;
+      }
+      const conflictNote =
+        flag.conflicts_with_index != null
+          ? `Contradicts paragraph ${flag.conflicts_with_index + 1} above. ${flag.reason || ""}`
+          : flag.reason || "Contradicts an earlier paragraph.";
+      return `
+        <span class="comparison__paragraph comparison__paragraph--contradiction" tabindex="0">
+          ${escapeHtml(paragraph)}
+          <span class="comparison__paragraph-flag">⚠ self-contradiction — ${escapeHtml(conflictNote)}</span>
+        </span>
+      `;
+    })
+    .join("");
 }
 
 function formatMetricValue(value) {
@@ -688,31 +1118,18 @@ function renderScorecard() {
   const list = document.getElementById("scorecard-list");
   if (!panel || !list) return;
   const canonCount = Array.from(state.canonEntries.values()).filter((entry) => entry.status === "canon").length;
-  const gateScenes = Array.from(state.timelineScenes.values()).filter((scene) => scene.retry).length;
-  const resolvedGateScenes = Array.from(state.timelineScenes.values()).filter((scene) => scene.retry && scene.resolved).length;
+  const sceneStates = Array.from(state.timelineScenes.values());
+  const caughtScenes = sceneStates.filter((scene) => scene.retry).length;
+  const resolvedCaughtScenes = sceneStates.filter((scene) => scene.retry && scene.resolved).length;
   const items = [
-    ["Scenes negotiated", `${state.timelineScenes.size || "—"} lanes`],
-    ["Contradictions caught", gateScenes ? `${gateScenes}${resolvedGateScenes ? `, ${resolvedGateScenes} resolved` : ""}` : "none observed yet"],
-    ["Retries triggered", `${state.retryScenes.size || gateScenes || 0}`],
-    ["Admitted scenes", `${canonCount} entries`],
-    [".twee ready", state.runId ? "download export available" : "start or load a run"],
-    ["Qwen + MCP path", "Qwen agents, MCP admission screen"],
+    ["Scenes negotiated", `${state.timelineScenes.size || "—"}`],
+    ["Contradictions caught", caughtScenes ? `${caughtScenes}${resolvedCaughtScenes ? `, ${resolvedCaughtScenes} resolved` : ""}` : "none observed yet"],
+    ["Admitted scenes", `${canonCount}`],
+    [".twee export", state.runId ? "ready to download" : "start or load a run"],
   ];
-  if (state.gateCatchSummary) {
-    items.push(["Conflict caught and resolved", state.gateCatchSummary]);
-  }
-  if (state.metrics?.contradiction_rate) {
-    items.push([
-      "Contradiction metric",
-      metricSummaryText("contradiction_rate", state.metrics.contradiction_rate),
-    ]);
-  }
-  if (state.metrics?.token_usage) {
-    items.push([
-      "Observed token cost",
-      metricSummaryText("token_usage", state.metrics.token_usage),
-    ]);
-  }
+  if (state.gateCatchSummary) items.push(["Latest gate ruling", state.gateCatchSummary]);
+  if (state.metrics?.contradiction_rate) items.push(["Contradiction metric", metricSummaryText("contradiction_rate", state.metrics.contradiction_rate)]);
+  if (state.metrics?.token_usage) items.push(["Observed token cost", metricSummaryText("token_usage", state.metrics.token_usage)]);
   list.innerHTML = items
     .map(
       ([label, value]) => `
@@ -726,16 +1143,23 @@ function renderScorecard() {
   panel.hidden = !(state.baselineReady || state.runComplete || state.metrics || state.runId);
 }
 
+// --- Main event dispatch -----------------------------------------------------
+
 function renderEventToLog(eventType, payload, meta = {}) {
+  const scene = meta.scene;
+  const attempt = scene || scene === 0 ? combineAttempt(meta.attempt, scene) : 1;
+  const fullMeta = { ...meta, attempt };
+
   updateRosterForEvent(eventType, payload, meta.agent);
-  updateSceneIndicator(eventType, meta.scene);
-  trackTimelineEvent(eventType, payload, meta);
-  const opts = {
-    scene: meta.scene,
-    retry: retrying(meta.scene, eventType),
-  };
+  updateSceneIndicator(eventType, scene);
+  updateMomentHeadline(eventType, payload, fullMeta);
+  trackTimelineEvent(eventType, payload, fullMeta);
+
+  const opts = { scene, attempt, retry: attempt > 1 };
+
   switch (eventType) {
     case "seed_entry":
+      state.foundationCount += 1;
       rememberCanonEntry(payload, "seed");
       appendDebateEntry(
         eventType,
@@ -743,6 +1167,7 @@ function renderEventToLog(eventType, payload, meta = {}) {
         `<strong>${payload.status === "contested" ? "contested — " : ""}</strong>${escapeHtml(truncate(payload.summary))}`,
         opts
       );
+      renderTimeline();
       refreshWorld();
       break;
     case "proposal":
@@ -757,124 +1182,105 @@ function renderEventToLog(eventType, payload, meta = {}) {
       appendDebateEntry(
         eventType,
         payload.critic_role,
-        `<strong>Target: ${escapeHtml(payload.target_role || "—")}.</strong> ${payload.hard_flag ? "<strong>Hard flag.</strong> " : ""}${detailsHtml("Read objection", payload.objection)} <span style="opacity:.6">(cites ${escapeHtml(payload.cited_entry_id)})</span>`,
+        `<strong>Target: ${escapeHtml(agentDisplayName(payload.target_role))}.</strong> ${payload.hard_flag ? "<strong>Hard flag.</strong> " : ""}${detailsHtml("Read objection", payload.objection)} <span style="opacity:.6">(cites: ${escapeHtml(describeEntry(payload.cited_entry_id))})</span>`,
         opts
       );
       break;
     case "judge_score":
-      appendDebateEntry(
-        eventType,
-        "JUDGES",
-        `<strong>${escapeHtml(payload.dimension)} on ${escapeHtml(payload.role_scored)}: ${escapeHtml(payload.score)}/10</strong> — ${detailsHtml("Read rationale", payload.rationale)}`,
-        opts
-      );
+      // Handled directly in connectToStream's listener (needs the running
+      // accumulator, not just this dispatcher) — see accumulateJudgeScore.
       break;
     case "synthesis":
-      appendDebateEntry(
-        eventType,
-        "ARBITER",
-        `${escapeHtml(truncate(payload.synthesis_notes))}`,
-        {
-          ...opts,
-          chips: [
-            payload.favored_role ? { label: `favored ${payload.favored_role}`, tone: "ok" } : null,
-            payload.overruled_role ? { label: `overruled ${payload.overruled_role}`, tone: "warn" } : null,
-            payload.entry_id ? `candidate ${payload.entry_id}` : null,
-            meta.scene ? `scene ${meta.scene}` : null,
-            meta.round ? `round ${meta.round}` : null,
-            opts.retry ? { label: "retry arbitration", tone: "warn" } : null,
-            "arbiter ruling",
-          ],
-        }
-      );
+      appendDebateEntry(eventType, "ARBITER", `${escapeHtml(truncate(payload.synthesis_notes))}`, {
+        ...opts,
+        chips: [
+          payload.favored_role ? { label: `favored ${agentDisplayName(payload.favored_role)}`, tone: "ok" } : null,
+          payload.overruled_role ? { label: `overruled ${agentDisplayName(payload.overruled_role)}`, tone: "warn" } : null,
+          `scene ${scene}`,
+          opts.retry ? { label: `round ${attempt} ruling`, tone: "warn" } : null,
+        ],
+      });
+      if (payload.overruled_role) showDisagreementBanner(payload, scene);
       refreshWorld();
       break;
-    case "admission_result":
-      // ponytail: retry state is scene-scoped because rejected revisions mint
-      // fresh entry IDs. Upgrade path: backend emits a stable revision group ID.
+    case "admission_result": {
+      const wasRetry = attempt > 1;
       if (payload.admitted) {
-        showGateBanner(payload, meta.scene);
-        state.retryScenes.delete(meta.scene);
-        if (state.timelineScenes.get(meta.scene)?.retry) {
-          state.gateCatchSummary = `Scene ${meta.scene} resolved after gate retry`;
-        }
+        showGateBanner(payload, scene);
+        if (wasRetry) state.gateCatchSummary = `Scene ${scene} resolved after a gate catch and retry.`;
         refreshCanonEntry(payload.entry_id);
       } else {
-        state.retryScenes.add(meta.scene);
-        state.gateCatchSummary = `Scene ${meta.scene} conflict caught; retry queued`;
-        showGateBanner(payload, meta.scene);
-        shakeContestedHexes();
-      }
-      if (!payload.admitted) {
-        state.gateCatchEntry = `gate-catch-${domIdPart(payload.entry_id || `${meta.scene}-${meta.round}`)}`;
+        state.gateCatchSummary = `Scene ${scene} — a contradiction was caught and sent back for revision.`;
+        showGateBanner(payload, scene);
+        triggerStageTremor();
+        state.gateCatchEntry = `gate-catch-${domIdPart(payload.entry_id || `${scene}-${meta.round}`)}`;
         updateGateJump();
       }
       appendDebateEntry(
         eventType,
         "GATE",
         payload.admitted
-          ? `<strong>admitted</strong> — ${escapeHtml(truncate(payload.reason, 160))}`
-          : `<strong>rejected</strong>${payload.conflicting_entry_id ? ` against <strong>${escapeHtml(payload.conflicting_entry_id)}</strong>` : ""} — ${escapeHtml(truncate(payload.reason, 180))}`,
+          ? `<strong>Admitted.</strong> ${escapeHtml(truncate(payload.reason, 160))}`
+          : `<strong>Rejected.</strong> ${escapeHtml(truncate(payload.reason, 180))}`,
         {
           ...opts,
           admitted: payload.admitted,
-          retry: !payload.admitted || opts.retry,
+          retry: wasRetry,
           id: !payload.admitted ? state.gateCatchEntry : null,
           focusable: !payload.admitted,
           chips: [
-            { label: payload.admitted ? "gate admitted" : "gate rejected", tone: payload.admitted ? "ok" : "danger" },
-            payload.entry_id ? `candidate ${payload.entry_id}` : null,
-            payload.conflicting_entry_id ? { label: `conflict ${payload.conflicting_entry_id}`, tone: "danger" } : null,
-            !payload.admitted ? { label: "retry queued", tone: "warn" } : state.timelineScenes.get(meta.scene)?.retry ? { label: "resolved", tone: "ok" } : null,
-            meta.scene ? `scene ${meta.scene}` : null,
+            { label: payload.admitted ? "admitted" : "contradiction caught", tone: payload.admitted ? "ok" : "danger" },
+            !payload.admitted ? { label: `conflicts with ${describeEntry(payload.conflicting_entry_id)}`, tone: "danger" } : null,
+            wasRetry ? { label: `round ${attempt}`, tone: "warn" } : null,
+            `scene ${scene}`,
           ],
         }
       );
+      if (!payload.admitted) {
+        state.sceneAttempt.set(scene, attempt + 1);
+        appendRoundDivider(scene, attempt + 1);
+      }
       renderScorecard();
       refreshWorld();
       break;
+    }
     case "human_injection":
+      state.humanInjectionCount += 1;
       rememberCanonEntry(payload, "human");
-      appendDebateEntry(eventType, "HUMAN", `constraint injected: "${escapeHtml(truncate(payload.full_text))}"`, opts);
+      appendDebateEntry(eventType, "HUMAN", `Constraint injected: "${escapeHtml(truncate(payload.full_text))}"`, opts);
+      renderTimeline();
       refreshWorld();
       break;
     case "scene_failed":
-      appendDebateEntry(eventType, "ARBITER", `scene could not converge after retries — skipped. ${escapeHtml(truncate(payload.reason, 160))}`, opts);
+      appendDebateEntry(eventType, "ARBITER", `Scene could not converge after retries — skipped. ${escapeHtml(truncate(payload.reason, 160))}`, opts);
       break;
     case "image_ready":
       markCanonImage(payload.entry_id, payload.image_url);
-      appendDebateEntry(eventType, "GATE", `illustration ready for <strong>${escapeHtml(payload.entry_id)}</strong>.`, opts);
+      appendDebateEntry(eventType, "ILLUSTRATOR", `An illustration resolves for <strong>${escapeHtml(describeEntry(payload.entry_id))}</strong>.`, opts);
       refreshWorld();
       break;
     case "baseline_ready":
       state.baselineReady = true;
-      appendDebateEntry(eventType, "BASELINE", "single-shot baseline generation complete.", {
+      appendDebateEntry(eventType, "BASELINE", "The single-shot baseline generation completes.", {
         ...opts,
-        chips: [
-          { label: "baseline", tone: "warn" },
-          "single-shot",
-          "no negotiation",
-        ],
+        chips: [{ label: "baseline", tone: "warn" }, "single-shot", "no negotiation"],
       });
       document.getElementById("baseline-panel").hidden = false;
-      document.getElementById("baseline-text").textContent = payload.text;
+      state.baselineText = payload.text;
+      renderBaselineText();
+      renderComparison();
       renderScorecard();
       loadMetrics();
       break;
     case "run_complete":
       state.runComplete = true;
-      appendDebateEntry(
-        eventType,
-        "ARBITER",
-        payload.status === "done" ? "Negotiation complete." : `Run failed: ${escapeHtml(payload.error)}`,
-        {
-          ...opts,
-          chips: [
-            { label: payload.status === "done" ? "run complete" : "run failed", tone: payload.status === "done" ? "ok" : "danger" },
-            "scorecard ready",
-          ],
-        }
-      );
+      appendDebateEntry(eventType, "ARBITER", payload.status === "done" ? "Negotiation complete." : `Run failed: ${escapeHtml(payload.error)}`, {
+        ...opts,
+        chips: [
+          { label: payload.status === "done" ? "run complete" : "run failed", tone: payload.status === "done" ? "ok" : "danger" },
+          "scorecard ready",
+        ],
+      });
       {
         const isReplay = new URLSearchParams(window.location.search).has("run");
         const label = payload.status === "done" ? (isReplay ? "replay complete" : "run complete") : "run failed";
@@ -909,53 +1315,86 @@ async function loadMetrics() {
     state.metrics = metrics;
     document.getElementById("baseline-panel").hidden = false;
     renderMetricsList();
+    renderBaselineText();
     renderScorecard();
   } catch (err) {
     console.error("Failed to load metrics:", err);
   }
 }
 
+// Demo-safe URL handling: pacing/debug params only matter for pre-recorded
+// replay demos (see backend.main's _stream_run) and should never sit in a
+// URL someone might screenshot, bookmark, or share. Captured once here and
+// kept in memory (state.replayParams) so replay pacing still works even
+// after the address bar is cleaned up.
+function stripReplayParamsFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const pacingKeys = ["pace", "slow_from", "slow_to", "slow_pace", "grace"];
+  let found = false;
+  for (const key of pacingKeys) {
+    if (params.has(key)) {
+      state.replayParams[key] = params.get(key);
+      found = true;
+    }
+  }
+  if (!found) return;
+  const clean = new URLSearchParams(window.location.search);
+  for (const key of pacingKeys) clean.delete(key);
+  const qs = clean.toString();
+  const newUrl = `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash}`;
+  window.history.replaceState({}, "", newUrl);
+}
+
 function connectToStream(runId) {
   if (state.eventSource) state.eventSource.close();
 
   state.maxRoundSeen = 0;
-  state.retryScenes.clear();
-  state.scenePhases.clear();
-  state.currentScene = null;
-  state.lastLoggedScene = null;
+  state.sceneAttempt.clear();
   state.timelineScenes.clear();
+  state.foundationCount = 0;
+  state.humanInjectionCount = 0;
+  state.foundationDividerShown = false;
+  state.lastLoggedScene = null;
+  state.currentScene = null;
   state.canonEntries.clear();
   state.gateCatchEntry = null;
   state.gateCatchSummary = null;
   state.metrics = null;
   state.baselineReady = false;
   state.runComplete = false;
+  judgeScoreAccumulator.clear();
+
   document.getElementById("debate-log").innerHTML = "";
   document.getElementById("baseline-panel").hidden = true;
   document.getElementById("judge-scorecard").hidden = true;
+  state.baselineText = null;
   document.getElementById("gate-banner").hidden = true;
+  document.getElementById("gate-banner").className = "gate-banner";
+  document.getElementById("disagreement-banner").hidden = true;
+  clearTimeout(state.disagreementBannerTimer);
   document.getElementById("scene-indicator").textContent = "—";
+  document.getElementById("moment-headline").textContent = "The negotiation is beginning…";
+  document.getElementById("entry-detail").hidden = true;
   renderTimeline();
   renderCanonLedger();
+  renderComparison();
   updateGateJump();
   hideHexTooltip();
+  renderHexMap([]);
 
-  // ?pace=<seconds>[&slow_from=<i>&slow_to=<i>&slow_pace=<seconds>] (see
-  // backend.main's _stream_run) paces a finished run's replay to look like
-  // it's unfolding live, with an optional slower window (e.g. the
-  // gate-catch) — for demo recording only, meaningless for a run that's
-  // still actually generating.
-  const params = new URLSearchParams(window.location.search);
+  // pace/slow_from/slow_to/slow_pace/grace (see backend.main's _stream_run)
+  // pace a finished run's replay to look like it's unfolding live, with an
+  // optional slower window (e.g. the gate-catch) — for demo recording only.
+  // Captured once at load and kept in memory (see stripReplayParamsFromUrl)
+  // rather than re-read from the (now-clean) address bar.
   const replayParams = new URLSearchParams();
-  for (const key of ["pace", "slow_from", "slow_to", "slow_pace", "grace"]) {
-    if (params.has(key)) replayParams.set(key, params.get(key));
-  }
+  for (const [key, value] of Object.entries(state.replayParams)) replayParams.set(key, value);
   const qs = replayParams.toString();
   const streamUrl = `${API_BASE}/api/stream/${runId}${qs ? `?${qs}` : ""}`;
   const es = new EventSource(streamUrl);
   es.onopen = () => {
     const isReplay = new URLSearchParams(window.location.search).has("run");
-    setRunStatus(isReplay ? `replay ${runId} — streaming…` : `run ${runId} — streaming…`, "pending");
+    setRunStatus(isReplay ? `replay ${runId} — streaming…` : `run ${runId} — negotiating…`, "pending");
   };
   const eventTypes = [
     "seed_entry",
@@ -981,11 +1420,44 @@ function connectToStream(runId) {
       } else {
         state.maxRoundSeen = Infinity; // run finished: show everything
       }
-      renderEventToLog(type, type === "run_complete" ? parsed : parsed.payload, {
+      const meta = {
         round: type === "run_complete" ? state.maxRoundSeen : parsed.round,
         scene: type === "run_complete" ? state.currentScene : parsed.scene,
         agent: type === "run_complete" ? "ARBITER" : parsed.agent,
-      });
+        // Real backend-tagged attempt/phase (backend/schemas.py). Absent
+        // only for the synthetic run_complete type, which isn't a real
+        // DebateEvent.
+        attempt: type === "run_complete" ? undefined : parsed.attempt,
+        phase: type === "run_complete" ? "negotiation" : parsed.phase,
+      };
+      const payload = type === "run_complete" ? parsed : parsed.payload;
+
+      if (type === "judge_score") {
+        // Judge scores need the running per-dimension accumulator (not
+        // just the generic dispatcher) so the transcript/timeline can
+        // represent "one dimension = one badge" instead of one badge per
+        // raw event. See the comment above judgeScoreAccumulator.
+        //
+        // New runs (backend fix B5) emit one judge_score event per attempt
+        // carrying all 16 scores as payload.scores. Saved replays from
+        // before that fix still have one event per individual score, with
+        // the score fields directly on payload. Normalize both into the
+        // same per-item loop so nothing downstream needs to know which
+        // shape it got.
+        const attempt = combineAttempt(meta.attempt, meta.scene);
+        const fullMeta = { ...meta, attempt };
+        const scoreItems = Array.isArray(payload.scores) ? payload.scores : [payload];
+        for (const scoreItem of scoreItems) {
+          updateRosterForEvent(type, scoreItem, meta.agent);
+          updateSceneIndicator(type, meta.scene);
+          updateMomentHeadline(type, scoreItem, fullMeta);
+          trackTimelineEvent(type, scoreItem, fullMeta);
+          const scores = accumulateJudgeScore(meta.scene, attempt, scoreItem.dimension, scoreItem);
+          renderJudgeGroup(meta.scene, attempt, scoreItem.dimension, scores);
+        }
+        return;
+      }
+      renderEventToLog(type, payload, meta);
     });
   }
   es.onerror = () => {
@@ -1040,12 +1512,19 @@ function openTwine() {
   // ponytail: no in-house Twee->HTML compiler — Twine itself already does
   // this ("Publish to File") once the exported .twee is imported. Standing
   // up a duplicate compiler here would violate YAGNI for zero added value.
-  window.open("https://twinejs.org", "_blank");
+  window.open("https://twinery.org", "_blank");
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  stripReplayParamsFromUrl();
   initRoster();
   checkConnection();
+  renderHexMap([]);
+
+  document.getElementById("canon-ledger-list").addEventListener("click", (e) => {
+    const button = e.target.closest(".canon-ledger__item");
+    if (button?.dataset.entryId) showEntryDetail(button.dataset.entryId);
+  });
 
   // Resume an existing run via ?run=<id> — reconnecting the SSE stream
   // replays everything already emitted (see backend/main.py's _stream_run)

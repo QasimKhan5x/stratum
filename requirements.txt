@@ -6,3 +6,5 @@ pydantic>=2.10,<3
 numpy==2.2.3
 dashscope==1.26.2
 mcp==1.28.1
+oss2==2.19.1
+tablestore==6.4.7

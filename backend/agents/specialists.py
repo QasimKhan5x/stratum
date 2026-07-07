@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 
+from backend.agent_roles import normalize_role
 from backend.agents.prompts import (
     ARCHITECT_PROMPT,
     HARMONIST_PROMPT,
@@ -33,10 +34,11 @@ _PROPOSAL_SCHEMA = """Respond with JSON only, matching exactly this schema:
   "summary": "<1-2 sentence gist other agents will read by default>",
   "full_text": "<the full playable scene prose, 2-4 paragraphs>",
   "tags": ["<tag>", ...],
-  "grid_position": [<x>, <y>],
+  "grid_position": [<x, 0-5>, <y, 0-4>],
   "outbound_links": ["<name of a passage this scene could link to>", ...],
   "rationale": "<why this proposal serves your mandate>"
-}"""
+}
+Spread grid_position across the full 0-5 by 0-4 range as the map fills in — do not cluster near [0, 0]."""
 
 _CRITIQUE_SCHEMA = """Respond with JSON only, matching exactly this schema:
 {
@@ -97,6 +99,7 @@ def propose(role: AgentRole, world_bible: WorldBible, revision_note: str | None 
         ],
     )
     result.setdefault("role", role.value)
+    result["role"] = normalize_role(result["role"])
     return result
 
 
@@ -163,4 +166,7 @@ def critique(role: AgentRole, target_proposal: dict, world_bible: WorldBible) ->
         )
 
     result.setdefault("critic_role", role.value)
+    result["critic_role"] = normalize_role(result["critic_role"])
+    if "target_role" in result:
+        result["target_role"] = normalize_role(result["target_role"])
     return result

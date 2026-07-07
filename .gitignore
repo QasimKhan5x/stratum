@@ -21,3 +21,19 @@ exports/
 # meant to live in git history. The final stratum_demo.mp4 gets uploaded
 # separately for the hackathon submission.
 demo_recordings/
+
+# Playwright's own run metadata, regenerated every test run.
+test-results/
+
+# One-off research script output (scripts/reflective_baseline_experiment.py)
+# — regenerable, real DashScope output, not meant to live in git history.
+# The writeup that cites it (stratum-baseline-fairness-experiment.md) does
+# live in git, quoting the numbers directly, so this isn't load-bearing.
+experiments/
+
+# local self-host database (backend/sqlite_store.py) — real generated run
+# data, not source; each self-hosted deployment grows its own.
+stratum.db
+stratum.db-wal
+stratum.db-shm
+*.db-journal

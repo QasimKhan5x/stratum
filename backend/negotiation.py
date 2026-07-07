@@ -53,7 +53,7 @@ async def run_scene(
         The WorldBibleEntry that was ultimately admitted for this scene.
     """
 
-    def emit(event_type: str, agent: str | None, payload: dict) -> None:
+    def emit(event_type: str, agent: str | None, payload: dict, *, attempt: int = 1) -> None:
         if on_event is not None:
             on_event(
                 DebateEvent(
@@ -62,13 +62,17 @@ async def run_scene(
                     agent=agent,
                     event_type=event_type,  # type: ignore[arg-type]
                     payload=payload,
+                    attempt=attempt,
                 )
             )
 
     revision_target: dict | None = None
     last_error: Exception | None = None
 
-    for attempt in range(_MAX_REVISION_ATTEMPTS):
+    for attempt_index in range(_MAX_REVISION_ATTEMPTS):
+        # 1-indexed for anything user/log-facing — "attempt 1" reads better
+        # than "attempt 0" and matches _MAX_REVISION_ATTEMPTS's own framing.
+        attempt = attempt_index + 1
         revision_note = revision_target.get("reason") if revision_target else None
 
         try:
@@ -83,7 +87,7 @@ async def run_scene(
                 )
             )
             for proposal in proposals:
-                emit("proposal", proposal.get("role"), proposal)
+                emit("proposal", proposal.get("role"), proposal, attempt=attempt)
 
             # --- Step 2: antithesis — structured cross-critiques. Fixed
             # pairing (Lorekeeper <-> Provocateur) plus dynamic routing
@@ -102,7 +106,7 @@ async def run_scene(
                 )
             )
             for critique in critiques:
-                emit("critique", critique.get("critic_role"), critique)
+                emit("critique", critique.get("critic_role"), critique, attempt=attempt)
 
             # --- Step 3: judging — four dimension-specific judges each score
             # every proposal in one batched call (16 calls -> 4 per attempt;
@@ -113,9 +117,16 @@ async def run_scene(
                     for dimension in _JUDGE_DIMENSIONS
                 )
             )
+            # Collapse the 4 batched calls' worth of scores (4 dimensions x 4
+            # proposals = 16 individual scores) into a single stream event.
+            # This is a legibility fix at the emission source, not a
+            # frontend patch: real per-call cardinality is 4 (one batched
+            # call per dimension), so 16 discrete top-level events was never
+            # a deliberate signal, just an artifact of flattening the list
+            # before emitting. No score data is dropped — all 16 still
+            # travel in the payload, just grouped.
             judge_scores = [score for batch in judge_score_batches for score in batch]
-            for judge_score in judge_scores:
-                emit("judge_score", None, judge_score)
+            emit("judge_score", None, {"scores": judge_scores}, attempt=attempt)
 
             # --- Step 4: synthesis — the Arbiter rules, informed by the
             # judge panel, producing one final candidate scene plus the
@@ -130,12 +141,26 @@ async def run_scene(
             # finalize that here rather than threading round_number through
             # every agent-logic call.
             candidate = candidate.model_copy(update={"provenance_round": round_number})
-            emit("synthesis", "ARBITER", {"entry_id": candidate.id, **synthesis_meta})
+            # `summary` is included here (not just `entry_id`) so a rejected
+            # candidate's content survives in the event stream even though
+            # it never joins the world bible — without this, a rejected
+            # synthesis was only ever recoverable as an opaque id hash.
+            emit(
+                "synthesis",
+                "ARBITER",
+                {"entry_id": candidate.id, "summary": candidate.summary, **synthesis_meta},
+                attempt=attempt,
+            )
 
             # --- Step 5: verified admission — check the candidate against
             # existing canon before committing it.
             admission_result = await asyncio.to_thread(check_admission, candidate, world_bible)
-            emit("admission_result", None, {"entry_id": candidate.id, **admission_result})
+            emit(
+                "admission_result",
+                None,
+                {"entry_id": candidate.id, **admission_result},
+                attempt=attempt,
+            )
         except Exception as exc:  # noqa: BLE001 - a transient failure anywhere
             # in this attempt (most commonly a slow-DashScope APITimeoutError,
             # observed in testing) shouldn't burn the whole scene — retry the

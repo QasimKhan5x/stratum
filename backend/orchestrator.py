@@ -53,8 +53,9 @@ async def _illustrate_scene(run: Run, entry_id: str, summary: str, round_number:
 
 async def run_generation(run: Run, scene_count: int = DEFAULT_SCENE_COUNT) -> None:
     """Drive a Run from "pending" to "done" (or "failed"), emitting
-    DebateEvents to run.queue as each step happens so a live SSE subscriber
-    sees the negotiation unfold in real time.
+    DebateEvents to run.events as each step happens so a live SSE subscriber
+    (backend.main's polling _stream_run) sees the negotiation unfold in
+    real time.
     """
     run.status = "running"
     illustration_tasks: list[asyncio.Task] = []
@@ -80,6 +81,7 @@ async def run_generation(run: Run, scene_count: int = DEFAULT_SCENE_COUNT) -> No
                         scene=0,
                         agent="SEED",
                         event_type="seed_entry",
+                        phase="seed",
                         # Exclude the raw embedding vector — the frontend never
                         # needs it, and it would otherwise dominate every
                         # SSE payload with ~1024 floats of noise.
@@ -129,6 +131,7 @@ async def run_generation(run: Run, scene_count: int = DEFAULT_SCENE_COUNT) -> No
                 scene=0,
                 agent="BASELINE",
                 event_type="baseline_ready",
+                phase="baseline",
                 payload={"text": run.baseline_text},
             )
         )

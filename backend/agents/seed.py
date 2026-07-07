@@ -22,12 +22,14 @@ _SEED_SCHEMA = """Respond with JSON only, matching exactly this schema:
       "full_text": "<full entry text, a paragraph or two>",
       "status": "canon" or "contested",
       "tags": ["<tag>", ...],
-      "grid_position": [<x>, <y>]
+      "grid_position": [<x 0-5>, <y 0-4>]
     },
     ...
   ]
 }
-Produce 6 to 8 entries. At least one must have "status": "contested"."""
+Produce 6 to 8 entries. At least one must have "status": "contested". \
+Spread grid_position values across the full 0-5 by 0-4 range instead of \
+clustering them near [0, 0]."""
 
 _VALID_STATUS = {"canon", "contested", "rejected"}
 

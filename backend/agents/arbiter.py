@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import uuid
 
+from backend.agent_roles import normalize_role
 from backend.agents.prompts import ARBITER_PROMPT
 from backend.models_client import chat_json, embed
 from backend.schemas import WorldBibleEntry
@@ -21,12 +22,13 @@ _SYNTHESIS_SCHEMA = """Respond with JSON only, matching exactly this schema:
   "summary": "<1-2 sentence gist>",
   "full_text": "<the full synthesized scene prose, 2-4 paragraphs>",
   "tags": ["<tag>", ...],
-  "grid_position": [<x>, <y>],
+  "grid_position": [<x, 0-5>, <y, 0-4>],
   "links": ["<outbound link/passage name>", ...],
   "favored_role": "<role name whose proposal most shaped this synthesis>",
   "overruled_role": "<role name most overruled, or null if none was>",
   "synthesis_notes": "<your stated reasoning: what you favored, what you overruled, and why — this streams live to observers>"
-}"""
+}
+Keep the favored proposal's grid_position unless it conflicts with an occupied cell; spread across the full 0-5 by 0-4 range rather than clustering near [0, 0]."""
 
 _VALID_STATUS = {"canon", "contested", "rejected"}
 
@@ -129,8 +131,8 @@ def synthesize(
     )
 
     synthesis_meta = {
-        "favored_role": result.get("favored_role"),
-        "overruled_role": result.get("overruled_role"),
+        "favored_role": normalize_role(result.get("favored_role")),
+        "overruled_role": normalize_role(result.get("overruled_role")),
         "synthesis_notes": result.get("synthesis_notes", ""),
     }
     return entry, synthesis_meta

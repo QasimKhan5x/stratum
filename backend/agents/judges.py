@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 
+from backend.agent_roles import normalize_role
 from backend.agents.prompts import (
     JUDGE_COHERENCE_PROMPT,
     JUDGE_PLAYABILITY_PROMPT,
@@ -85,8 +86,13 @@ def score_all(dimension: str, proposals: list[dict], world_bible: WorldBible) ->
     )
     raw_scores = result.get("scores") or []
     # Index by role so a model that reorders, drops, or duplicates entries
-    # doesn't silently misalign scores with the wrong proposal.
-    by_role = {entry.get("role_scored"): entry for entry in raw_scores if isinstance(entry, dict)}
+    # doesn't silently misalign scores with the wrong proposal. Normalize
+    # the model's role_scored here so a malformed variant (e.g. "The
+    # Harmonist") still matches proposals[i]["role"], which is itself
+    # already normalized by specialists.propose.
+    by_role = {
+        normalize_role(entry.get("role_scored")): entry for entry in raw_scores if isinstance(entry, dict)
+    }
 
     scored = []
     for proposal in proposals:
