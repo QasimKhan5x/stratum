@@ -30,8 +30,6 @@ _SYNTHESIS_SCHEMA = """Respond with JSON only, matching exactly this schema:
 }
 Keep the favored proposal's grid_position unless it conflicts with an occupied cell; spread across the full 0-5 by 0-4 range rather than clustering near [0, 0]."""
 
-_VALID_STATUS = {"canon", "contested", "rejected"}
-
 
 def synthesize(
     proposals: list[dict],

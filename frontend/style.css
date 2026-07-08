@@ -506,6 +506,10 @@ details {
   cursor: pointer;
 }
 
+.hex-cell--fog {
+  cursor: default;
+}
+
 .hex-cell__poly {
   stroke-width: 1.5px;
   transition: fill var(--dur-slow) ease, stroke var(--dur-slow) ease, filter var(--dur-slow) ease, opacity var(--dur-slow) ease;
@@ -528,7 +532,8 @@ details {
 }
 
 .hex-cell--canon .hex-cell__label,
-.hex-cell--contested .hex-cell__label {
+.hex-cell--contested .hex-cell__label,
+.hex-cell--rejected .hex-cell__label {
   opacity: 0.85;
   fill: var(--paper);
 }
@@ -555,6 +560,17 @@ details {
   stroke: var(--redline);
   filter: drop-shadow(0 0 9px rgba(217, 102, 63, 0.45));
   animation: contested-pulse 2.6s ease-in-out infinite;
+}
+
+/* Defense-in-depth: the backend should never emit this status to a live
+   negotiation (see backend/agents/seed.py's _VALID_STATUS), but an older
+   saved run/replay could still carry it — style it rather than render an
+   unstyled hex. Reuses the crimson "caught contradiction" palette since a
+   rejected seed fact is thematically closest to that. */
+.hex-cell--rejected .hex-cell__poly {
+  fill: var(--crimson-soft);
+  stroke: var(--crimson);
+  filter: drop-shadow(0 0 9px rgba(239, 74, 82, 0.45));
 }
 
 .hex-cell:not(.hex-cell--fog):hover .hex-cell__poly,
@@ -961,7 +977,7 @@ details {
 }
 
 .agent-timeline__scene-status--caught {
-  color: var(--redline-bright, var(--redline));
+  color: var(--redline);
 }
 
 .agent-timeline__scene-status--resolved {
@@ -999,7 +1015,7 @@ details {
   border-radius: var(--radius-full);
   border: 1px solid var(--redline);
   background: var(--redline-soft);
-  color: var(--redline);
+  color: var(--paper);
   font-size: var(--fs-2xs);
   cursor: help;
 }
@@ -1185,13 +1201,13 @@ details {
 }
 
 .entry__chip--warn {
-  color: var(--redline);
+  color: var(--paper);
   background: var(--redline-soft);
   border-color: var(--redline);
 }
 
 .entry__chip--danger {
-  color: var(--crimson);
+  color: var(--paper);
   background: var(--crimson-soft);
   border-color: var(--crimson);
 }
@@ -1421,7 +1437,7 @@ details {
   margin-top: var(--space-2);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
-  color: var(--crimson);
+  color: var(--paper);
 }
 
 .comparison__text {

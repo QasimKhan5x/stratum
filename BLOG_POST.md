@@ -66,11 +66,11 @@ next round of proposals, with nothing paused.
 Two different kinds of disagreement get surfaced live, not left buried in
 transcript prose. When the Arbiter's synthesis names a proposal it actually
 overruled, a disagreement banner fires in the moment — reusing the same
-amber/redline visual language as the admission gate's own rejection
-banner — plus a persistent badge on that round in the timeline, so
-scrolling back through a finished run still shows exactly where two
-specialists clashed and who won. Separately, the debate panel's baseline
-comparison renders the single-shot baseline paragraph by paragraph, with
+visual layout as the admission gate's own rejection banner, but amber-toned
+rather than the gate's crimson — plus a persistent badge on that round in
+the timeline, so scrolling back through a finished run still shows exactly
+where two specialists clashed and who won. Separately, the debate panel's
+baseline comparison renders the single-shot baseline paragraph by paragraph, with
 any self-contradicting paragraph flagged inline against the specific
 earlier paragraph it conflicts with — the tradeoff Stratum is arguing for
 is something you can read directly, not a bare percentage somewhere else

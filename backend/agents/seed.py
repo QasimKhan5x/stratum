@@ -32,7 +32,11 @@ Produce 6 to 8 entries. At least one must have "status": "contested". \
 Spread grid_position values across the full 0-5 by 0-4 range instead of \
 clustering them near [0, 0]."""
 
-_VALID_STATUS = {"canon", "contested", "rejected"}
+# Matches the two statuses the seed prompt actually ever asks for (see
+# _SEED_SCHEMA above). Nothing in the pipeline currently produces
+# "rejected" — don't let a hallucinated one slip through here, since the
+# frontend hex grid has no style for it.
+_VALID_STATUS = {"canon", "contested"}
 
 
 def generate_seed(premise: str) -> list[WorldBibleEntry]:

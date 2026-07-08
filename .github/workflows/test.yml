@@ -15,3 +15,27 @@ jobs:
           python-version: "3.13"
       - run: pip install -r requirements-dev.txt
       - run: pytest tests/ -v
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: pip install -r requirements-dev.txt
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      # frontend/app.js's checkConnection() hits GET /health on load, so a
+      # bare static file server leaves a "backend not reachable" console
+      # error that fails the smoke test's zero-console-errors assertion.
+      # No DASHSCOPE_API_KEY is set — the backend starts fine without one
+      # (backend/config.py defaults it to ""), and /health never touches
+      # models_client, so this makes zero real LLM calls.
+      - run: python3 -m uvicorn backend.main:app --port 8000 &
+      - run: python3 -m http.server 8090 --directory frontend &
+      - run: curl --retry 10 --retry-connrefused --retry-delay 1 -sf http://localhost:8000/health && curl --retry 10 --retry-connrefused --retry-delay 1 -sf http://localhost:8090/ -o /dev/null
+      - run: npx playwright test

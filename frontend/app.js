@@ -53,6 +53,10 @@ const state = {
   currentScene: null,
   gateBannerTimer: null,
   disagreementBannerTimer: null,
+  // Consecutive EventSource error events since the last successfully
+  // received message; used to flip a visible "connection lost" state
+  // instead of silently sitting on a stale "connected" indicator forever.
+  sseErrorStreak: 0,
   canonEntries: new Map(),
   gateCatchEntry: null,
   gateCatchSummary: null,
@@ -318,7 +322,7 @@ function renderHexMap(entries) {
 
     g.attr("class", cellClass(d))
       .attr("tabindex", nowRevealed ? "0" : null)
-      .attr("role", nowRevealed ? "button" : null)
+      .attr("role", nowRevealed ? "img" : null)
       .attr("aria-label", nowRevealed ? `${status} scene, round ${d.entry.provenance_round}: ${d.entry.summary}` : null)
       .attr("aria-hidden", nowRevealed ? null : "true")
       .on("mouseenter.tip focus.tip", nowRevealed ? (event) => showHexTooltip(event, d.entry) : null)
@@ -910,7 +914,6 @@ function showGateBanner(payload, scene) {
   const title = document.getElementById("gate-banner-title");
   const detail = document.getElementById("gate-banner-detail");
   const icon = banner?.querySelector(".gate-banner__icon");
-  const announcer = document.getElementById("live-announcer");
   if (!banner || !title || !detail || !icon) return;
   clearTimeout(state.gateBannerTimer);
   banner.hidden = false;
@@ -922,7 +925,6 @@ function showGateBanner(payload, scene) {
   detail.textContent = payload.admitted
     ? `Resolved through renegotiation. ${payload.reason || "The candidate no longer conflicts with canon."}`
     : `Conflicts with ${describeEntry(payload.conflicting_entry_id)}. ${payload.reason || "A contradiction was detected."} Specialists are already revising.`;
-  if (announcer) announcer.textContent = `${title.textContent}. ${detail.textContent}`;
 
   if (payload.admitted) {
     state.gateBannerTimer = window.setTimeout(() => {
@@ -947,13 +949,11 @@ function showDisagreementBanner(payload, scene) {
   const banner = document.getElementById("disagreement-banner");
   const title = document.getElementById("disagreement-banner-title");
   const detail = document.getElementById("disagreement-banner-detail");
-  const announcer = document.getElementById("live-announcer");
   if (!banner || !title || !detail) return;
   clearTimeout(state.disagreementBannerTimer);
   banner.hidden = false;
   title.textContent = `Scene ${scene} — Arbiter overrules ${agentDisplayName(payload.overruled_role)}`;
   detail.textContent = `Favored ${agentDisplayName(payload.favored_role)}. ${truncate(payload.synthesis_notes, 120)}`;
-  if (announcer) announcer.textContent = `${title.textContent}. ${detail.textContent}`;
   state.disagreementBannerTimer = window.setTimeout(() => {
     banner.hidden = true;
   }, 4200);
@@ -1398,6 +1398,8 @@ function connectToStream(runId) {
   es.onopen = () => {
     const isReplay = new URLSearchParams(window.location.search).has("run");
     setRunStatus(isReplay ? `replay ${runId} — streaming…` : `run ${runId} — negotiating…`, "pending");
+    state.sseErrorStreak = 0;
+    checkConnection();
   };
   const eventTypes = [
     "seed_entry",
@@ -1414,7 +1416,14 @@ function connectToStream(runId) {
   ];
   for (const type of eventTypes) {
     es.addEventListener(type, (e) => {
-      const parsed = JSON.parse(e.data);
+      let parsed;
+      try {
+        parsed = JSON.parse(e.data);
+      } catch (err) {
+        console.error(`Stratum: malformed SSE payload for event "${type}"`, err, e.data);
+        return;
+      }
+      state.sseErrorStreak = 0;
       // run_complete is sent as a bare {status, error} dict; every other
       // event type is a full DebateEvent envelope whose actual content
       // lives in .payload (see backend/schemas.py's DebateEvent).
@@ -1469,6 +1478,12 @@ function connectToStream(runId) {
     // a real failure.
     if (state.eventSource === es) {
       console.warn("SSE connection dropped for run", runId);
+      state.sseErrorStreak += 1;
+      // A handful of consecutive retries failing (not just one transient
+      // blip) is a real signal the backend is down mid-run — surface it on
+      // the same status seal checkConnection() already owns rather than
+      // leaving a stale "connected" indicator up indefinitely.
+      if (state.sseErrorStreak >= 3) checkConnection();
     }
   };
   state.eventSource = es;
@@ -1522,6 +1537,10 @@ document.addEventListener("DOMContentLoaded", () => {
   stripReplayParamsFromUrl();
   initRoster();
   checkConnection();
+  // Re-verify periodically: checkConnection() only ran once on load
+  // otherwise, so a backend that dies mid-run left the "connected" seal
+  // stuck showing a stale state indefinitely.
+  window.setInterval(checkConnection, 30000);
   renderHexMap([]);
 
   document.getElementById("canon-ledger-list").addEventListener("click", (e) => {
