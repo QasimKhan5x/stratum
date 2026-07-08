@@ -27,17 +27,26 @@ if you want to point the same machinery at a different domain.
   in `backend/agents/prompts.py` and the output schema in
   `backend/schemas.py`; the negotiation loop, judging, admission gate, and
   metrics keep working. See [Extending it for your own domain](#extending-it-for-your-own-domain).
-- **Hobbyists** — you just want to run the interactive-fiction generator
-  yourself: pick a premise, watch four agents argue a branching story into
-  existence, export it to Twine. Self-hosts with no cloud account required
-  (see [Quickstart](#quickstart)); the default persistence is a local
-  SQLite file.
-- **Researchers** — you care about the quality-vs-compute question
-  underneath all of this: does adversarial multi-agent negotiation
-  actually buy anything over a single agent with a matched compute
-  budget? `backend/metrics.py` and `stratum-baseline-fairness-experiment.md`
-  are the harness and the (honestly reported, including where it doesn't
-  fully hold up) result.
+- **Hobbyists** — Twine/interactive-fiction people (itch.io, r/interactivefiction,
+  IFComp-adjacent communities) who just want to run the generator as-is, no
+  forking required: pick a premise, watch four agents argue a branching story
+  into existence, export it to Twine. Self-hosts with no cloud account
+  required (see [Quickstart](#quickstart)); the default persistence is a
+  local SQLite file.
+- **Researchers** — two independent reasons to fork this, not one:
+  (1) the quality-vs-compute question — does adversarial multi-agent
+  negotiation actually buy anything over a single agent with a matched
+  compute budget? `backend/metrics.py` and
+  `stratum-baseline-fairness-experiment.md` are the harness and the
+  (honestly reported, including where it doesn't fully hold up) result; and
+  (2) multi-agent coordination failure modes as a first-class design
+  concern, not an afterthought — the admission gate's citation requirements
+  and the Harmonist-only `hard_flag` escalation path are a direct mitigation
+  for a specific failure mode named in the MAST multi-agent-system
+  failure-taxonomy literature (cited in `backend/agents/specialists.py`).
+  If you study agent coordination, this is a testbed for swapping in a
+  different admission-gate strategy or judge design independent of the
+  fiction wrapper (see [Core engine vs. reference app](#core-engine-vs-reference-app)).
 
 ## Quickstart
 
