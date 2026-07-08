@@ -48,6 +48,14 @@ class Run:
     total_calls: int = 0
     baseline_tokens: int = 0
     baseline_calls: int = 0
+    # True only for a Run this process itself created (see create_run) and
+    # is actively calling emit() on directly — i.e. self.events is already
+    # authoritative and up to date with no help needed. False for a Run
+    # reconstructed by sqlite_store.load_run (this process didn't generate
+    # it: a restart, or a replica serving a run some sibling is generating),
+    # where refresh_events_from_store must keep polling SQLite to see new
+    # events at all. See refresh_events_from_store's docstring.
+    generated_here: bool = True
 
     def emit(self, event: DebateEvent) -> None:
         self.events.append(event)
@@ -65,9 +73,14 @@ class Run:
         """Pulls any events this process hasn't seen yet from SQLite — the
         mechanism that lets /api/stream serve a run live even when a
         *different* backend process/replica is the one actually generating
-        it (see backend/sqlite_store.py's module docstring). A no-op, cheap
-        indexed query when this process IS the one generating the run,
-        since there's nothing new to find."""
+        it (see backend/sqlite_store.py's module docstring). Skipped
+        entirely when this process is the one generating the run
+        (generated_here=True): self.events is already authoritative via
+        emit(), so the SQLite round-trip would just be a guaranteed-empty
+        query repeated every 100ms per open stream — real (if individually
+        cheap) blocking I/O on the event loop for zero benefit."""
+        if self.generated_here:
+            return
         new_events = sqlite_store.load_events_from(self.id, len(self.events))
         if new_events:
             self.events.extend(new_events)

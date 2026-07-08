@@ -90,6 +90,34 @@ def test_refresh_events_from_store_picks_up_events_written_by_another_process():
     assert [e.round for e in second_process_view.events] == [1, 2, 3]
 
 
+def test_generated_here_is_true_only_for_the_authoring_process():
+    """Guards the perf fix in Run.refresh_events_from_store: a run this
+    process created must self-report generated_here=True (so its poll loop
+    skips the redundant SQLite round-trip), while a run reconstructed via
+    get_run's cache-miss path — simulating a restart or a sibling replica —
+    must come back False, or it would stop seeing new events entirely."""
+    run = create_run("a haunted lighthouse")
+    assert run.generated_here is True
+
+    _RUNS.clear()
+    reloaded = get_run(run.id)
+    assert reloaded is not None
+    assert reloaded.generated_here is False
+
+
+def test_refresh_events_from_store_is_a_noop_for_the_authoring_process():
+    run = create_run("a haunted lighthouse")
+    run.emit(_event(1))
+
+    # Something else appends a row directly (shouldn't happen for a real
+    # self-generated run, but proves the skip is unconditional on the flag,
+    # not just "there's nothing new").
+    sqlite_store.append_event(run.id, 1, _event(2))
+
+    run.refresh_events_from_store()
+    assert len(run.events) == 1
+
+
 def test_get_run_returns_none_for_an_unknown_run_id():
     assert get_run("does-not-exist") is None
 

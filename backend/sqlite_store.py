@@ -24,7 +24,9 @@ behind a load balancer can serve `/api/world`, `/api/export`, `/api/metrics`,
 and even a live `/api/stream` for a run some *other* replica is actively
 generating (see `Run.refresh_events_from_store`, called from
 backend.main._stream_run's poll loop). No pub/sub system, no message bus —
-just an indexed SQLite query every 100ms per active stream connection.
+just an indexed SQLite query every 100ms per active stream connection for
+that cross-replica case (skipped entirely when this process is the one
+generating the run — see `Run.generated_here`).
 
 ponytail: SQLite in WAL mode supports concurrent readers plus one active
 writer per file, which is genuinely enough for this project's real scale
@@ -197,6 +199,9 @@ def load_run(run_id: str):
         total_calls=total_calls,
         baseline_tokens=baseline_tokens,
         baseline_calls=baseline_calls,
+        # Reconstructed from storage, not the process actively generating
+        # it — see Run.generated_here.
+        generated_here=False,
     )
     run.events = [DebateEvent.model_validate_json(r[0]) for r in event_rows]
     return run
