@@ -81,64 +81,9 @@ buys you and what its real ceiling is.
 
 ## Architecture
 
-```mermaid
-flowchart TB
-    subgraph Frontend["frontend/ (static, no build step)"]
-        UI[Cyanotype hex map + debate panel<br/>D3.js, EventSource/SSE]
-    end
+![Stratum architecture diagram](docs/architecture.png)
 
-    subgraph Backend["backend/ (FastAPI)"]
-        API["main.py<br/>generate · stream · inject · world · export · metrics"]
-        Orch["orchestrator.py<br/>seed → scenes 1..N → baseline (concurrent)"]
-        Neg["negotiation.py<br/>per-scene: thesis → antithesis → judging →<br/>synthesis → admission (retry on rejection)"]
-        Gate["admission_gate.py<br/>embedding screen → LLM contradiction check"]
-        WB[("world_bible.py<br/>canon store: SQLite by default,<br/>Tablestore when configured")]
-        McpClient["mcp_world_bible_client.py"]
-    end
-
-    subgraph MCP["Local MCP server (stdio subprocess)"]
-        McpServer["mcp_world_bible_server.py<br/>check_contradiction · search_world_bible"]
-    end
-
-    subgraph Agents["backend/agents/ (the IF reference app's specialists)"]
-        Seed[seed.py]
-        Spec["specialists.py<br/>Lorekeeper · Provocateur ·<br/>Harmonist · Architect"]
-        Judges[judges.py]
-        Arbiter[arbiter.py]
-        Baseline[baseline.py]
-        Illustrator[illustrator.py]
-    end
-
-    subgraph LLM["Any OpenAI-compatible provider<br/>(defaults to DashScope/QwenCloud)"]
-        Chat["chat model(s)<br/>via the standard openai SDK"]
-        Embed["embedding model"]
-        Image["qwen-image-2.0-pro<br/>(native DashScope SDK — the one<br/>non-swappable piece, see below)"]
-    end
-
-    subgraph ECS["Alibaba Cloud ECS deployment (ecs.e-c1m1.large, ap-southeast-1)"]
-        Nginx["nginx<br/>serves frontend/ + reverse-proxies /api, /health"]
-        Uvicorn["uvicorn (backend.main:app)<br/>managed by systemd (stratum.service)"]
-    end
-
-    UI <-- "SSE: DebateEvent stream" --> API
-    API --> Orch --> Neg
-    Neg --> Spec & Judges & Arbiter
-    Neg --> Gate --> WB
-    Gate --> McpClient
-    McpClient -- "MCP: check_contradiction" --> McpServer
-    McpClient -. "falls back in-process on failure" .-> Gate
-    Orch --> Seed & Baseline
-    Neg --> Illustrator
-    Orch -. "concurrent, non-blocking" .-> Baseline
-    Neg -. "concurrent, non-blocking" .-> Illustrator
-
-    Seed & Spec & Judges & Arbiter & Baseline --> Chat
-    Gate --> Embed
-    Illustrator --> Image
-
-    Nginx --> Uvicorn --> API
-    Nginx -.-> UI
-```
+*(Generated from source via [`scripts/generate_architecture_diagram.py`](scripts/generate_architecture_diagram.py) — regenerate with `python scripts/generate_architecture_diagram.py` after `pip install diagrams` and `brew install graphviz`.)*
 
 **Negotiation lifecycle** (`backend/negotiation.py`): each scene runs
 thesis (all four specialists propose in parallel) → antithesis (structured

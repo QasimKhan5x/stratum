@@ -47,8 +47,8 @@ existence before it becomes canon — and the argument compiles to a real, playa
   not required by the current rules text but kept as extra evidence — not committed
   to git per this repo's `.gitignore`, so it isn't linkable on GitHub; only the code
   file link is guaranteed to work as the Devpost-required proof).
-- **Architecture diagram:** the Mermaid diagram in `README.md`'s "Architecture"
-  section, rendered inline on the GitHub repo page:
+- **Architecture diagram:** the diagram in `README.md`'s "Architecture"
+  section (`docs/architecture.png`), rendered inline on the GitHub repo page:
   https://github.com/QasimKhan5x/stratum#architecture
 - **Blog post (optional, for the separate Blog Post Prize):** `BLOG_POST.md` is
   written and complete in the repo, but not yet published to a public blog/social
@@ -82,7 +82,17 @@ visible part of the output instead of noise averaged away?
 
 ## What it does
 
-Stratum is a framework for multi-agent creative negotiation. Four specialist agents —
+Stratum is a framework for multi-agent creative negotiation, not a single fixed app: the
+negotiation engine, admission gate, and metrics harness are domain-agnostic (see
+`README.md`'s "Core engine vs. reference app" and "Extending it for your own domain"
+sections), and it's genuinely forkable — `LLM_BASE_URL`/`LLM_API_KEY`/`LLM_MODEL_<ROLE>`
+env vars swap in any OpenAI-compatible provider (OpenAI, a local vLLM/Ollama server, or
+DashScope, the default), and it self-hosts end-to-end with SQLite and zero Alibaba Cloud
+account required — Tablestore/OSS/ECS are a live-verified upgrade path, not a hard
+dependency. The interactive-fiction generator below is the first reference app built on
+that engine.
+
+Four specialist agents —
 **Lorekeeper** (defends established canon, must cite the specific entry it thinks a
 proposal violates), **Provocateur** (structurally required to push against whatever
 looks safest), **Harmonist** (enforces tonal consistency, can raise a hard flag the
@@ -249,7 +259,7 @@ while filling out the form:
      file in their code repo that demonstrates use of Alibaba Cloud services and
      APIs"** (not a video). Point this at `backend/cloud_storage.py`.
   3. An architecture diagram (a clear visual of how Qwen Cloud connects to
-     backend/database/frontend). The README's Mermaid diagram satisfies this.
+     backend/database/frontend). The README's diagram satisfies this.
   4. A text description of features/functionality.
   5. A demo video, **under 3 minutes** ("judges are not required to watch beyond three
      minutes"), showing the project functioning, **uploaded to and publicly visible
