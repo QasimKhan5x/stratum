@@ -278,3 +278,67 @@ quality, real-world relevance) — not a re-run of the earlier audits. Same no-s
   - Full suite re-run after the fix: **38/38 passing** (`.venv/bin/python -m pytest tests/ -q`),
     confirming `tests/conftest.py`'s Tablestore-isolation fixture still keeps the rest of the suite
     off the now-live real instance.
+- **2026-07-08 (eighth session — v5 demo video, closing all six locked-script gaps)**: A background
+  subagent tasked with closing the gaps between the locked script and the first assembled cut hit the
+  same category of tool-infrastructure outage as prior sessions, but left real, reusable progress on
+  disk (two fresh Playwright captures, an extended `capture_live.py`) before stopping cleanly rather
+  than retrying blindly. Confirmed the outage was isolated to that subagent's session (the parent's own
+  tools were immediately responsive) and took the remaining work over directly. All six gaps closed:
+  1. **Baseline click+scroll (Gap 4)**: the first `baseline_interaction.webm` capture attempt's wait
+     logic gated on an unnecessary intermediate `#metrics-list` check before the real signal
+     (`.comparison__paragraph--contradiction`); fixed to wait on the real signal directly. That
+     re-capture surfaced a genuine finding: this run's real baseline `contradiction_rate` is `0` (no
+     self-contradicting paragraph exists in this run's actual baseline text), so the script's specific
+     "red-bordered contradiction paragraph" sub-detail cannot be honestly shown for this run — omitted
+     rather than faked. The real click+scroll+reveal motion (confirmed by frame inspection) is used
+     instead, landing on the genuine `Stratum 0.429 / Baseline 0` metrics panel.
+  2. **Quad-split (Gap 2)**: replaced the single-cropped-panel stand-in with a true 2x2 `xstack`
+     composite of 4 real, independently-moving regions (hex map, transcript column, top status strip,
+     bottom scene-status bar) cropped from one continuous `centerpiece.webm` recording, per the script's
+     primary approach.
+  3. **Breath beat (Gap 3)**: replaced the frozen-frame with the subagent's fresh `breath.webm` capture
+     (real idle map state, contested hex still visible and pulsing).
+  4. **Title + close banner-ghosting (Gaps 1 & 6)**: composited the real 0:00 tease's last frame (the
+     amber disagreement banner, still legible) behind both cards via an ffmpeg `screen` blend — static
+     at 60% opacity for the title, sliding in from off-screen at 15% opacity for the close. Hit and
+     fixed a real bug here: `blend` run directly on `yuv420p` produced a solid magenta wash across the
+     whole frame; fixed by forcing `format=gbrp` on every input touching `blend` (and re-asserting it
+     after the close beat's `overlay` step, which otherwise silently reset the format tag). Also caught
+     a `shortest=1`/missing-`-loop` bug that truncated the close beat's ghost-overlay pass to a single
+     frame.
+  5. **Bell card content (Gap 5)**: fetched `GET /api/world/93def347f880` fresh and confirmed
+     `scene-1c11b57e` (round 4) is genuinely this run's final admitted entry, and separately confirmed
+     `seed-04-4d9819` (the bell tone's own canon entry) is still `status: contested` after all four
+     rounds — never promoted to canon by any round. `bell.html` now shows both real facts (the actual
+     final scene's text, tagged as such, plus the persistent-contested status line) rather than only the
+     seed entry as before.
+  Rebuilt the full video (`assemble.py`): **167.5s**, full-decode-clean, no LLM calls made anywhere in
+  this session (all fixes used existing replay data or read-only `GET` endpoints).
+- **2026-07-08 (ninth session — Devpost submission draft + live requirements re-verification)**: A
+  background subagent hit the same category of tool-infrastructure outage as the eighth session's, this
+  time mid-write on the checklist entry it was drafting — again stopped cleanly per the explicit "do not
+  retry" error signal rather than hammering a dead backend, and again the outage was confirmed isolated
+  to that subagent's session (the parent's own tools were immediately responsive afterward). Took the
+  remaining two steps (this entry, plus committing/pushing) over directly. What the subagent completed
+  before the outage:
+  - **Re-verified the live `qwencloud-hackathon.devpost.com` pages directly** rather than trusting the
+    fifth session's (2026-07-07) notes, and found two real corrections: (1) the required video hosting
+    platforms per the Official Rules (which state they prevail on conflicts) are **YouTube, Vimeo, or
+    Youku** — not "Facebook Video" as previously noted; YouTube satisfies every version of the list. (2)
+    "Proof of Alibaba Cloud Deployment" is actually defined as **a link to a code file in the repo that
+    demonstrates real Alibaba Cloud SDK usage** (`backend/cloud_storage.py` satisfies this) — not a
+    separate video recording as the fifth session's note claimed. A short supplementary recording
+    (`demo_recordings/alibaba_cloud_deployment_proof.mp4`, 33.5s) already existed from an earlier
+    unlogged pass and was left as-is (not required, not duplicated).
+  - Confirmed via `gh repo view` the GitHub repo is genuinely public and MIT-licensed (auto-detected),
+    spot-checked the README quickstart against the real `requirements.txt`/`backend/main.py`, and
+    re-ran the full suite: **57/57 passing**, fully mocked.
+  - Freshly curled the live ECS deployment (not assumed from a prior session's note): `/health`,
+    `/`, and `/api/models` all responded correctly, genuinely live right now.
+  - Wrote `DEVPOST_SUBMISSION.md` at the repo root: a complete, ready-to-paste draft for every standard
+    Devpost field (Inspiration, What it does, How we built it, Challenges, Accomplishments, What we
+    learned, What's next, Built With, links), grounded entirely in this repo's own real docs, with
+    clearly marked placeholders for the handful of things only the human can supply (the YouTube link,
+    team/account fields) and an explicit remaining-human-steps checklist.
+  - Confirmed nothing under `demo_recordings/` was touched, moved, or staged — the demo video and
+    voiceover script stay out of git per the existing `.gitignore` and the user's explicit instruction.
