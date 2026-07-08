@@ -31,3 +31,27 @@ def normalize_role(raw: str | None) -> str | None:
     if upper.startswith("THE "):
         upper = upper[4:].strip()
     return _CANONICAL_BY_UPPER.get(upper, raw)
+
+
+def safe_grid_position(raw) -> tuple[int, int] | None:
+    """Coerce a model-supplied grid_position into the (int, int) tuple
+    WorldBibleEntry.grid_position expects, or None if it isn't a usable
+    shape. Used by backend.agents.arbiter.synthesize and
+    backend.agents.seed.generate_seed, both of which read grid_position
+    straight out of model JSON output.
+
+    ponytail: models occasionally return a malformed grid_position (wrong
+    length, non-numeric elements, or a bare scalar instead of a pair) —
+    without this, a plain `tuple(raw)` could raise TypeError (non-iterable
+    input) or pass a bad value through to WorldBibleEntry's pydantic
+    validation, which raises instead of degrading. Silently dropping to
+    None (no position assigned) is an acceptable default here: the
+    frontend already treats a missing grid_position as "unplaced," which
+    is the honest outcome when the model didn't actually give a usable one.
+    """
+    if not isinstance(raw, (list, tuple)) or len(raw) != 2:
+        return None
+    try:
+        return (int(raw[0]), int(raw[1]))
+    except (TypeError, ValueError):
+        return None

@@ -23,6 +23,30 @@ from backend.schemas import DebateEvent
 
 DEFAULT_SCENE_COUNT = 4
 
+# Matches negotiation.run_scene's revision-attempt bound: a few attempts is
+# enough to ride out a transient failure without masking a persistently
+# broken seed call.
+_MAX_SEED_ATTEMPTS = 3
+
+
+async def _generate_seed_with_retry(premise: str) -> list:
+    """Runs generate_seed with the same retry-with-backoff pattern every
+    scene after it already gets (see backend.negotiation.run_scene's
+    except-block). Unlike every scene, the seed step previously ran once
+    with no retry at all, so a single transient failure (e.g. a slow-
+    DashScope timeout, observed for other calls in testing) killed the
+    entire run before a single scene even started.
+    """
+    last_error: Exception | None = None
+    for attempt_index in range(_MAX_SEED_ATTEMPTS):
+        try:
+            return await asyncio.to_thread(generate_seed, premise)
+        except Exception as exc:  # noqa: BLE001 - same transient-failure rationale as run_scene's retry loop
+            last_error = exc
+            if attempt_index < _MAX_SEED_ATTEMPTS - 1:
+                await asyncio.sleep(min(2**attempt_index, 8))
+    raise RuntimeError(f"Seed generation failed after {_MAX_SEED_ATTEMPTS} attempts. Last error: {last_error}")
+
 
 async def _illustrate_scene(run: Run, entry_id: str, summary: str, round_number: int) -> None:
     """Fire-and-forget image generation for one admitted scene.
@@ -72,7 +96,7 @@ async def run_generation(run: Run, scene_count: int = DEFAULT_SCENE_COUNT) -> No
         # attributes to run.total_tokens/total_calls (the default "stratum"
         # bucket) rather than run.baseline_tokens/baseline_calls.
         with track_run(run):
-            seed_entries = await asyncio.to_thread(generate_seed, run.premise)
+            seed_entries = await _generate_seed_with_retry(run.premise)
             for entry in seed_entries:
                 run.world_bible.add(entry)
                 run.emit(

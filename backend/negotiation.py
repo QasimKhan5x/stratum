@@ -89,11 +89,25 @@ async def run_scene(
             for proposal in proposals:
                 emit("proposal", proposal.get("role"), proposal, attempt=attempt)
 
-            # --- Step 2: antithesis — structured cross-critiques. Fixed
-            # pairing (Lorekeeper <-> Provocateur) plus dynamic routing
-            # (Harmonist, Architect) is an agent-logic decision; here every
-            # specialist critiques the specialist "opposite" it in the list
-            # as a structurally-valid placeholder pairing.
+            # --- Step 2: antithesis — structured cross-critiques. Every
+            # specialist critiques whichever proposal is next in
+            # _SPECIALIST_ROLES order (a fixed round-robin: role i critiques
+            # proposal i+1, wrapping around) — the same mechanism for all
+            # four roles, not just a Lorekeeper<->Provocateur pairing.
+            #
+            # ponytail: this round-robin is a structurally-valid pairing
+            # (every proposal gets exactly one critique) but not a targeted
+            # one — it doesn't know or care which proposal is actually most
+            # tonally divergent or spatially weak, so Harmonist/Architect
+            # can end up critiquing an already-safe proposal purely by list
+            # position. The ceiling is "arbitrary but valid pairing," not
+            # "no critique happens." Upgrade path: route Harmonist to
+            # whichever proposal's embedding is furthest from the tonal-
+            # consistency canon entries, and Architect to whichever
+            # grid_position is most isolated/colliding with existing
+            # entries — both signals (embeddings, grid positions) already
+            # exist on each proposal/entry, so this is an aggregation
+            # change here, not new data collection.
             critiques = await asyncio.gather(
                 *(
                     asyncio.to_thread(
@@ -166,6 +180,12 @@ async def run_scene(
             # attempt like an admission rejection, keeping revision_target
             # (if any) from a prior attempt rather than discarding it.
             last_error = exc
+            # Short exponential backoff before retrying: an immediate retry
+            # defeats the point of retrying a 429/rate-limit error, which is
+            # the most likely real cause of a transient failure here. Capped
+            # at _MAX_REVISION_ATTEMPTS - 1 backoffs total (small either way),
+            # so this never meaningfully delays the happy path.
+            await asyncio.sleep(min(2**attempt_index, 8))
             continue
 
         if admission_result.get("admitted"):

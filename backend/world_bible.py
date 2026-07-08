@@ -1,11 +1,23 @@
 """In-memory world bible.
 
-ponytail: this is a temporary stand-in for Tablestore (see
-stratum-architecture-plan.md's data layer section). Per the project's
-local-first build order, the negotiation engine runs entirely against
-this in-memory store first; swapping it for a Tablestore-backed
-implementation with the same add/get/list/update surface is the
-intended upgrade path once the core negotiation logic is proven.
+This base class now permanently serves three roles rather than being a
+throwaway placeholder:
+
+1. The base class both persistence tiers subclass — `backend.sqlite_store.
+   SQLiteWorldBible` and `backend.cloud_storage.TablestoreWorldBible` both
+   extend this class, overriding only add/update to write through to their
+   respective stores, while inheriting get/list/canon_context as-is.
+2. The last-resort fallback tier in `backend.cloud_storage.make_world_bible`'s
+   three-tier factory (Tablestore -> SQLite -> this bare in-memory class),
+   used if even a local SQLite file can't be opened (e.g. a read-only
+   filesystem) — see that function's docstring.
+3. The disposable "shadow bible" `backend.metrics.compute_comparison` builds
+   to replay a baseline's paragraphs through the same admission-gate logic
+   the negotiated pipeline uses, purely to compute a contradiction rate for
+   comparison — never persisted, thrown away after that one calculation.
+
+Not a stand-in for anything else shipping later; it's the permanent
+in-memory implementation these three cases actually want.
 """
 
 from __future__ import annotations

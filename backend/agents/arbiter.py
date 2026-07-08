@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import uuid
 
-from backend.agent_roles import normalize_role
+from backend.agent_roles import normalize_role, safe_grid_position
 from backend.agents.prompts import ARBITER_PROMPT
 from backend.models_client import chat_json, embed
 from backend.schemas import WorldBibleEntry
@@ -124,7 +124,7 @@ def synthesize(
         # itself isn't given one (see the historical signature this
         # implements).
         provenance_round=0,
-        grid_position=tuple(grid_position) if grid_position else None,
+        grid_position=safe_grid_position(grid_position),
         embedding=embed(full_text) if full_text else None,
         tags=result.get("tags", []),
         links=result.get("links", []),

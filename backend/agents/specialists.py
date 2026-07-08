@@ -8,6 +8,7 @@ current world bible before acting.
 from __future__ import annotations
 
 import json
+import time
 
 from backend.agent_roles import normalize_role
 from backend.agents.prompts import (
@@ -110,9 +111,14 @@ def critique(role: AgentRole, target_proposal: dict, world_bible: WorldBible) ->
     world-bible entry ID as evidence, or they are rejected and re-requested
     — this is the direct mitigation for the MAST failure-taxonomy finding
     that unstructured coordination causes most multi-agent failures.
-    Structural pairing: Lorekeeper and Provocateur always critique each
-    other; Harmonist and Architect are routed dynamically to whichever
-    proposal is most tonally divergent or spatially weak.
+    Which proposal a given role critiques is decided by the caller
+    (backend.negotiation.run_scene), not by this function — it is
+    currently a fixed round-robin (every role critiques whichever proposal
+    is next in role order) for all four roles alike. See that module's
+    ponytail comment for the real pairing logic and its known ceiling;
+    this docstring previously (incorrectly) claimed Harmonist/Architect
+    were routed dynamically by tonal/spatial divergence, which was never
+    implemented.
 
     Args:
         role: which specialist is critiquing.
@@ -152,6 +158,13 @@ def critique(role: AgentRole, target_proposal: dict, world_bible: WorldBible) ->
     # scene running against an empty world bible, which shouldn't happen
     # in practice since the seed step always runs first.
     if valid_ids and result.get("cited_entry_id") not in valid_ids:
+        # Brief backoff before the retry call: this function runs inside a
+        # worker thread (backend.negotiation.run_scene calls it via
+        # asyncio.to_thread), so a plain blocking time.sleep here doesn't
+        # stall the event loop. An immediate retry defeats the point of
+        # retrying a 429/rate-limit response, which is the most likely real
+        # cause of a bad/invalid citation under load.
+        time.sleep(1)
         retry_message = base_user_message + (
             f"\n\nYour previous response cited '{result.get('cited_entry_id')}', "
             f"which is not a real entry ID. Valid entry IDs are: {sorted(valid_ids)}. "

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import uuid
 
+from backend.agent_roles import safe_grid_position
 from backend.agents.prompts import SEED_PROMPT
 from backend.models_client import chat_json, embed
 from backend.schemas import WorldBibleEntry
@@ -81,7 +82,7 @@ def generate_seed(premise: str) -> list[WorldBibleEntry]:
                 status=status,
                 provenance_agent="SEED",
                 provenance_round=0,
-                grid_position=tuple(grid_position) if grid_position else None,
+                grid_position=safe_grid_position(grid_position),
                 embedding=embed(full_text) if full_text else None,
                 tags=raw.get("tags", []),
                 links=[],

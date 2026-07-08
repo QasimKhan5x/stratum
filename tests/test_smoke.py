@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from backend import main
 from backend.main import app
 from backend.models_client import MODEL_ROLES
 
@@ -56,6 +57,32 @@ def test_health():
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_generate_rejects_out_of_range_scene_count():
+    """scene_count is public, unauthenticated input (POST /api/generate) —
+    it must be bounded so a bad/malicious value can't kick off an
+    arbitrarily expensive (real DashScope $$) run. Both requests must fail
+    validation (422) before any background generation task is scheduled;
+    if they didn't, this test would hang/error trying to reach DashScope."""
+    too_many = client.post("/api/generate", json={"premise": "test premise", "scene_count": 999})
+    assert too_many.status_code == 422
+
+    too_few = client.post("/api/generate", json={"premise": "test premise", "scene_count": 0})
+    assert too_few.status_code == 422
+
+
+def test_generate_accepts_in_range_scene_count(monkeypatch):
+    # BackgroundTasks run synchronously within TestClient's request/response
+    # cycle, so the real background job is stubbed out here — this test is
+    # only about request validation accepting boundary values (1 and 12),
+    # not about exercising a real (costly) generation run.
+    monkeypatch.setattr(main, "_run_generation_sync", lambda run, scene_count: None)
+
+    for scene_count in (1, 12):
+        response = client.post("/api/generate", json={"premise": "test premise", "scene_count": scene_count})
+        assert response.status_code == 200
+        assert "run_id" in response.json()
 
 
 def test_model_roles():

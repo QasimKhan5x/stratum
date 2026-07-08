@@ -45,6 +45,13 @@ def _stub_synthesize(proposals, critiques, judge_scores, world_bible, revision_n
     return entry, {"favored_role": "LOREKEEPER", "overruled_role": None, "synthesis_notes": "n"}
 
 
+async def _instant_sleep(_seconds) -> None:
+    """Stand-in for asyncio.sleep in tests that exercise a retry/backoff
+    path — keeps the test deterministic and fast without waiting on real
+    wall-clock time."""
+    return None
+
+
 def test_transient_error_mid_attempt_is_retried_not_fatal(monkeypatch):
     """A raised exception on attempt 1's proposal step must not abort the
     scene — negotiation.run_scene should retry the whole attempt and still
@@ -62,6 +69,10 @@ def test_transient_error_mid_attempt_is_retried_not_fatal(monkeypatch):
     monkeypatch.setattr(negotiation.judges, "score_all", _stub_score_all)
     monkeypatch.setattr(negotiation.arbiter, "synthesize", _stub_synthesize)
     monkeypatch.setattr(negotiation, "check_admission", lambda candidate, wb: {"admitted": True, "reason": "ok", "conflicting_entry_id": None})
+    # The retry loop now backs off between attempts (see negotiation.py's
+    # except-block comment) — stub it out so this test still runs instantly
+    # instead of actually sleeping.
+    monkeypatch.setattr(negotiation.asyncio, "sleep", _instant_sleep)
 
     import asyncio
 
@@ -70,6 +81,35 @@ def test_transient_error_mid_attempt_is_retried_not_fatal(monkeypatch):
     # 4 specialists attempted on the failed pass (one raised, but
     # asyncio.gather still schedules all four) plus 4 on the retry.
     assert calls["count"] >= 5
+
+
+def test_generate_seed_retries_after_a_transient_failure(monkeypatch):
+    """A transient failure on generate_seed's first attempt must not kill
+    the whole run — orchestrator._generate_seed_with_retry should retry and
+    still succeed once the failure clears, matching every scene's existing
+    retry behavior (see negotiation.run_scene)."""
+    calls = {"count": 0}
+
+    def flaky_generate_seed(premise):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise TimeoutError("simulated transient DashScope timeout")
+        return [
+            WorldBibleEntry(
+                id="seed-00", summary="s", full_text="f", status="canon",
+                provenance_agent="SEED", provenance_round=0,
+            )
+        ]
+
+    monkeypatch.setattr(orchestrator, "generate_seed", flaky_generate_seed)
+    monkeypatch.setattr(orchestrator.asyncio, "sleep", _instant_sleep)
+
+    import asyncio
+
+    seed_entries = asyncio.run(orchestrator._generate_seed_with_retry("a premise"))
+
+    assert calls["count"] == 2
+    assert [e.id for e in seed_entries] == ["seed-00"]
 
 
 def test_run_generation_never_reraises_on_failure(monkeypatch):
@@ -88,6 +128,10 @@ def test_run_generation_never_reraises_on_failure(monkeypatch):
     # shutdown waiting for that thread, not because the fix under test is
     # broken.
     monkeypatch.setattr(orchestrator, "generate_baseline", lambda premise: "stub baseline")
+    # generate_seed now retries with backoff (_generate_seed_with_retry);
+    # since `boom` always raises, all attempts are exhausted here, so stub
+    # the sleep out to keep this test instant instead of actually waiting.
+    monkeypatch.setattr(orchestrator.asyncio, "sleep", _instant_sleep)
 
     import asyncio
 

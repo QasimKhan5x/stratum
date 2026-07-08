@@ -6,6 +6,9 @@ self-host-without-a-cloud-account story; see that module's docstring).
 
 from __future__ import annotations
 
+import threading
+import time
+
 import pytest
 
 from backend import sqlite_store
@@ -89,6 +92,56 @@ def test_refresh_events_from_store_picks_up_events_written_by_another_process():
 
 def test_get_run_returns_none_for_an_unknown_run_id():
     assert get_run("does-not-exist") is None
+
+
+def test_concurrent_writers_do_not_lose_or_corrupt_events():
+    """Exercises the concurrency ceiling sqlite_store.py's ponytail comment
+    already discloses (WAL mode: many readers, one writer per file) under
+    real thread contention, rather than just asserting it in prose. Several
+    threads hammer append_event against the *same* run/db file at once;
+    `_write_lock` should serialize the actual writes so every one of them
+    lands exactly once, with no interleaved/corrupted rows and no silent
+    drops — the failure mode a missing/broken lock would produce.
+    """
+    run = create_run("a concurrency stress test")
+    thread_count = 8
+    events_per_thread = 25
+
+    def write_events(thread_index: int) -> None:
+        base_seq = thread_index * events_per_thread
+        for i in range(events_per_thread):
+            sqlite_store.append_event(
+                run.id,
+                base_seq + i,
+                DebateEvent(
+                    round=thread_index,
+                    scene=1,
+                    agent="LOREKEEPER",
+                    event_type="proposal",
+                    payload={"thread": thread_index, "i": i},
+                ),
+            )
+
+    threads = [threading.Thread(target=write_events, args=(t,)) for t in range(thread_count)]
+    started_at = time.monotonic()
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    elapsed = time.monotonic() - started_at
+
+    assert all(not thread.is_alive() for thread in threads), "a writer thread hung/deadlocked"
+    assert elapsed < 10, f"concurrent writers took too long ({elapsed:.2f}s) — possible lock contention regression"
+
+    all_events = sqlite_store.load_events_from(run.id, 0)
+    assert len(all_events) == thread_count * events_per_thread
+
+    # No duplicate/interleaved corruption: every (thread, i) pair written
+    # exactly once, and every payload deserialized cleanly as valid JSON
+    # (a corrupted write would show up here as a garbled or missing pair).
+    seen = {(e.payload["thread"], e.payload["i"]) for e in all_events}
+    expected = {(t, i) for t in range(thread_count) for i in range(events_per_thread)}
+    assert seen == expected
 
 
 def test_runs_are_isolated_from_each_other():
