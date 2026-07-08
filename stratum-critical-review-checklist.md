@@ -33,10 +33,10 @@ decision to skip/caveat, with reason.
 
 | # | Issue | Fix | Status |
 |---|---|---|---|
-| P2-1 | Entire baseline-beats-Stratum-on-divergence finding is **n=1, one premise, one run**, with no replication plan, and it now contradicts the project's own pitch language. | Built `scripts/baseline_fairness_replication.py`: 3 distinct premises (locked demo premise + 2 new, genre-distinct, each with its own seed-marked contested question), full stratum + reflective-baseline + metrics pipeline per premise, aggregated. Launched as a real, long-running background job (real DashScope calls, expected to run for an extended period — 3 premises × full negotiation + up to 30 reflective-revision rounds each). n=3, not n=5, as a disclosed, deliberate scope/cost tradeoff (see script docstring) — a real improvement over n=1, not the full n=5 ceiling. | **IN PROGRESS** — running in the background; results to be written up in `stratum-baseline-fairness-experiment.md` once complete |
-| P2-2 | The "compute-matched" reflective baseline only used 47% of its budget (hit its round cap, not its token budget) and *still* matched/beat Stratum on divergence. | Same script: `MAX_REFLECTIVE_ROUNDS` raised from the original 10 to 30, specifically so the reflective baseline can get much closer to (ideally reach) full token-budget parity instead of stopping at ~47%. Actual budget-utilization % achieved is logged and saved per premise (`reflective_baseline_budget_pct_achieved` in each premise's `comparison.json`), not assumed. | **IN PROGRESS** — same background run as P2-1 |
-| P2-3 | The only evidence favoring Stratum's distinctiveness is qualitative, single-researcher, un-blinded — the report itself flags confirmation-bias risk. Meanwhile the clean quantitative metric (divergence_score) went against Stratum. | **Built.** `backend/metrics.py` gained a real fourth metric, `premature_resolution`: an LLM-judge check (same pattern as the admission gate's own contradiction check) asking whether a variant's text collapses the run's seed-marked `contested` fact into one confident answer vs. preserving the ambiguity. Applied uniformly to stratum/baseline/reflective_baseline text via the same prompt, so it's a genuinely symmetric, non-tautological test — the actual thing hypothesis (A) claims and (B) would have no structural way to achieve. Unit-tested (`tests/test_metrics.py`, 4 tests, mocked LLM calls, all pass); now also computed for real as part of the P2-1/P2-2 background run. | **DONE** (code + tests) — real numbers landing via the same background run as P2-1/P2-2 |
-| P2-4 | Pitch currently claims a categorical advantage the project's own newest, most rigorous experiment doesn't support. | Blocked on P2-1/P2-2/P2-3's real results finishing — this is a write-up/framing decision, not something to pre-empt before the n=3 data exists. Will update `stratum-baseline-fairness-experiment.md`'s "honest interpretation" section once the background run completes, narrowing or reaffirming the categorical-advantage claim based on what the numbers (including the new premature_resolution metric) actually show. | **QUEUED** — depends on P2-1/P2-2/P2-3 results |
+| P2-1 | Entire baseline-beats-Stratum-on-divergence finding is **n=1, one premise, one run**, with no replication plan, and it now contradicts the project's own pitch language. | Built and ran `scripts/baseline_fairness_replication.py` to completion: 3 distinct premises (locked demo premise + 2 new, genre-distinct, each with its own seed-marked contested question), full stratum + reflective-baseline + metrics pipeline per premise, aggregated in `experiments/baseline_fairness_replication/replication_report.json`. Real finding: the n=1 divergence-score result does **not** replicate cleanly — on the original premise rerun fresh, Stratum and the reflective baseline are statistically tied (0.5704 vs 0.5708); on the 2 new premises Stratum is clearly higher. n=3, not n=5, a disclosed scope/cost tradeoff. | **DONE** — see `stratum-baseline-fairness-experiment.md`'s "n=3 replication" section for full numbers |
+| P2-2 | The "compute-matched" reflective baseline only used 47% of its budget (hit its round cap, not its token budget) and *still* matched/beat Stratum on divergence. | `MAX_REFLECTIVE_ROUNDS` raised from 10 to 30. Real result: all 3 premises reached genuine budget parity this time (101.3%-104.9% of Stratum's own token spend), not 47% — the "was it actually matched" caveat is resolved with real numbers, not reasserted. | **DONE** |
+| P2-3 | The only evidence favoring Stratum's distinctiveness is qualitative, single-researcher, un-blinded — the report itself flags confirmation-bias risk. Meanwhile the clean quantitative metric (divergence_score) went against Stratum. | Built the real fourth metric, `premature_resolution` (`backend/metrics.py`, unit-tested, `tests/test_metrics.py`). Now computed for real across all 3 premises: Stratum protected the contested fact 3/3 times (0.0); both naive and reflective baselines collapsed it into a confident answer 2/3 times each (0.6667). This turns the n=1 write-up's anecdotal qualitative observation into a real, replicated, quantified metric. | **DONE** — real n=3 numbers in `stratum-baseline-fairness-experiment.md` |
+| P2-4 | Pitch currently claims a categorical advantage the project's own newest, most rigorous experiment doesn't support. | Updated `stratum-baseline-fairness-experiment.md`'s honest interpretation and `README.md`'s "On efficiency gain" caveat (surgical edit) based on the real n=3 numbers. Verdict: the broad "categorical advantage on every metric" framing still does not hold (divergence_score is premise-dependent noise, not a clean win); what does hold, replicated 3-for-3 and now quantified rather than anecdotal, is narrower — Stratum's gate mechanism protects a deliberately-contested fact that a compute-matched single agent does not reliably protect on its own. Pitch language updated to make this narrower, now-replicated claim rather than the broader unsupported one. | **DONE** |
 
 ## Priority 3 — frontend, real regressions and unresolved repeats
 
@@ -212,3 +212,30 @@ quality, real-world relevance) — not a re-run of the earlier audits. Same no-s
   explicit instruction. Verified via the GitHub API that `main` now points at the new commit. Demo
   video (v4, to replace the stale v1-v3 which predate the map/disagreement/contradiction-highlighting
   work) queued to be produced once the in-flight P2/P5-3 background jobs finish.
+- **2026-07-08 (sixth session — P2-1/P2-2/P2-3/P2-4 real n=3 replication completed, and a genuine
+  no-subagents-rule vindication)**: the `ashbind_hollow` premise (the one still incomplete after the
+  fifth session's crash) hit **three separate tool-infrastructure outages** across multiple background
+  subagent attempts to resume it — long silent stalls and explicit "tool environment unavailable"
+  errors, closely mirroring the exact pattern that motivated this file's original no-subagents rule.
+  Rather than keep resuming a subagent into the same wall, took the work over directly in the
+  foreground and found the **real root cause was never actually an infrastructure outage**: the
+  restart command every subagent attempt used, `python scripts/baseline_fairness_replication.py`,
+  fails immediately and deterministically with `ModuleNotFoundError: No module named 'backend'`
+  because that invocation puts the script's own directory (`scripts/`) on `sys.path`, not the repo
+  root — confirmed by reproducing it directly, repeatedly, in a fresh shell. The original (pre-crash)
+  successful runs and this session's fix both use `python -m scripts.baseline_fairness_replication`
+  from the repo root instead, which correctly puts the cwd on `sys.path`. Once invoked correctly, the
+  run completed cleanly in the foreground with no further issues (~68 minutes wall-clock for the one
+  remaining premise: real Stratum negotiation + real 16-round reflective baseline). Full n=3
+  `replication_report.json` now exists; wrote up the honest results in
+  `stratum-baseline-fairness-experiment.md` (new "n=3 replication" section, original n=1 section
+  preserved verbatim above it) and made the corresponding surgical edit to `README.md`'s "On
+  efficiency gain" paragraph. Headline finding: the n=1 divergence-score result (baseline beating
+  Stratum) does not replicate cleanly — it's a near-tie on the original premise and a clear Stratum
+  win on the 2 new ones — while the new `premature_resolution` metric, now real and quantified rather
+  than a qualitative reading, replicated 3-for-3: Stratum protected a deliberately contested fact in
+  every premise, both baselines collapsed it into a confident answer in 2 of 3. Also updated the
+  demo-video redesign in parallel this session (separate workstream, see `demo_recordings/
+  stratum_demo_v5_script.md`) — that work independently hit the same category of tool-infrastructure
+  outage mid-write twice, and content was recovered from subagent transcripts and saved directly both
+  times rather than lost.

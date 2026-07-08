@@ -175,20 +175,21 @@ rejections) rather than only showing the final, agreed-upon result.
 scene (four proposals, four critiques, four judge-dimension batches, one
 synthesis, plus occasional retries) against exactly one call for the
 single-shot baseline — see `/api/metrics`'s `token_usage` figure. The
-efficiency gain isn't fewer tokens; the honest claim, tested directly (see
-`stratum-baseline-fairness-experiment.md`), is narrower than "no single
-agent can do this at any price": a single agent given a *matched* compute
-budget spent on self-critique/revision rather than negotiation closed
-most of the measured gap, and even exceeded Stratum on one metric in a
-single real run. The result that held up was qualitative, not one of the
-tracked numbers — Stratum's admission gate is specifically built to catch
-premature resolution of a deliberately contested fact, and did so, while
-the equal-budget single agent confidently resolved it anyway. The
-baseline-comparison panel in the frontend renders this directly: the
-single-shot baseline's text with every contradicting paragraph highlighted
-inline, so the tradeoff is something you can read, not just a number.
-Reported as found, not softened; see that writeup for full methodology
-and caveats (single run, n=1, not yet a repeated-trials claim).
+efficiency gain isn't fewer tokens; the honest claim, replicated across 3
+premises (see `stratum-baseline-fairness-experiment.md`), is narrower than
+"no single agent can do this at any price": a single agent given a
+*matched* compute budget spent on self-critique/revision still closes most
+of the gap on creative-divergence score (noisy, premise-dependent, not a
+clean win either way). What replicated 3-for-3, and is now a real
+quantified metric rather than one person's reading of one baseline's
+prose: Stratum's admission gate protected a deliberately contested,
+seed-marked fact in every premise, while a compute-matched single agent
+confidently resolved it anyway in 2 of 3. The baseline-comparison panel in
+the frontend renders this directly: the single-shot baseline's text with
+every contradicting paragraph highlighted inline, so the tradeoff is
+something you can read, not just a number. Reported as found, not
+softened; see that writeup for full methodology, the n=3 replication, and
+caveats.
 
 ## Core engine vs. reference app
 
