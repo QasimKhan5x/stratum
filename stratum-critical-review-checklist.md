@@ -6,7 +6,7 @@ closing every real gap raised in that review. **Refer back to this file before s
 work session on this project** — don't re-litigate priority from scratch each time.
 
 Per explicit instruction: **no subagents for this work** — background workers have repeatedly hit
-tool-infrastructure outages on exactly the load-bearing checks that mattered most (3-for-3 on
+tool-infrastructure   outages on exactly the load-bearing checks that mattered most (3-for-3 on
 sections 2/3/4 of the ops audit). Everything below gets done directly, in the foreground, by
 whoever is driving this file.
 
@@ -19,7 +19,7 @@ decision to skip/caveat, with reason.
 
 | # | Issue | Why it's P0 | Action | Status |
 |---|---|---|---|---|
-| P0-1 | **Alibaba Cloud Tablestore/OSS/Function Compute usage: zero SDK imports, zero client instantiation, confirmed by grep.** DashScope is the only Alibaba Cloud service actually wired up. | This is a non-negotiable hackathon submission requirement, not a nice-to-have. Currently at 0% progress, not "in progress." | Built `backend/cloud_storage.py`, real SDKs (`oss2`, `tablestore`), against the actually-provisioned instance/bucket (all 7 Alibaba Cloud env vars were already real, not placeholders). **OSS: fully live and deployed** — export endpoint now uploads to the real `stratum-hackathon-assets` bucket and returns a 7-day signed URL; verified end-to-end including running the upload from the ECS host itself and curling the resulting signed URL back (HTTP 200, real content). Along the way found and fixed a real endpoint-format bug (virtual-hosted OSS_ENDPOINT was getting double-prefixed with the bucket name). **Tablestore: code-complete, unit-tested (5 tests against a fake OTS client, all pass), wired into `runs.py::create_run()`, but not live** — the provisioned `stratum-world` instance rejects every call with `OTSAuthFailed: The user is disabled.`; confirmed this is instance-specific and not an account/credential problem (identical access key pair works fine for OSS). This is a console-side toggle, needs the account owner to re-enable that Tablestore instance — `make_world_bible()` degrades gracefully to the in-memory store in the meantime so the live demo isn't broken by it, and will start persisting for real the moment it's flipped, zero code changes needed. Function Compute deliberately not used — nothing in this project has a genuine serverless-shaped workload; see `cloud_storage.py`'s docstring for the reasoning. | **DONE** (OSS, live) / **BLOCKED — needs account owner action** (Tablestore instance re-enable in Alibaba Cloud console; not fixable from code) |
+| P0-1 | **Alibaba Cloud Tablestore/OSS/Function Compute usage: zero SDK imports, zero client instantiation, confirmed by grep.** DashScope is the only Alibaba Cloud service actually wired up. | This is a non-negotiable hackathon submission requirement, not a nice-to-have. Currently at 0% progress, not "in progress." | Built `backend/cloud_storage.py`, real SDKs (`oss2`, `tablestore`), against the actually-provisioned instance/bucket (all 7 Alibaba Cloud env vars were already real, not placeholders). **OSS: fully live and deployed** — export endpoint now uploads to the real `stratum-hackathon-assets` bucket and returns a 7-day signed URL; verified end-to-end including running the upload from the ECS host itself and curling the resulting signed URL back (HTTP 200, real content). Along the way found and fixed a real endpoint-format bug (virtual-hosted OSS_ENDPOINT was getting double-prefixed with the bucket name). **Tablestore: re-verified live for real, 2026-07-08, not just taken on the session log's word.** The account owner previously reported re-enabling the `stratum-world` instance (session log below); rather than trust that note, ran a direct live check: constructed a real `TablestoreWorldBible` against the actual `.env`-configured instance (no mocks), did a real `put_row` write, then a fresh-client `get_range` read-back via `load_from_tablestore()` — round-tripped a real entry with zero `OTSAuthFailed` errors, then deleted the test row to leave the table clean. **Genuinely live**, confirmed directly, not inferred. Bonus finding from doing the check for real instead of trusting unit tests alone: `load_from_tablestore()` had a real, previously-latent bug — `dict(row.attribute_columns)` raised `ValueError` against real Tablestore rows, which include a trailing per-column timestamp `(name, value, timestamp)`, because the unit-test fake client only ever returned bare `(name, value)` pairs and so never exercised the real shape. Fixed in `backend/cloud_storage.py` (unpack by column name instead of blind `dict()`), and updated `tests/test_cloud_storage.py`'s `FakeOTSClient.get_range` to return the real 3-tuple shape so this class of drift can't hide behind a passing suite again. Full suite re-run after the fix: 38/38 passing. Function Compute deliberately not used — nothing in this project has a genuine serverless-shaped workload; see `cloud_storage.py`'s docstring for the reasoning. | **DONE** (OSS, live) / **DONE** (Tablestore, live and read/write-verified directly; recovery-path bug found and fixed in the process) |
 | P0-2 | **Twine-opens-in-Twine has never been verified, twice in a row.** `which tweego twine` → not found; no npm/brew tooling; a subagent check never returned a result. This is the demo's closing beat. | The single most external-facing claim in the pitch ("real file, real Twine software opens it") has literally never been checked. | **Resolved directly, no subagent.** Downloaded the real Tweego v2.1.1 macOS binary (bundled Harlowe story formats) from the official GitHub release, ran it via Rosetta against both real exports in the repo (`demo_recordings/c7c529ae8bdd/story.twee`, `demo_recordings/video_assets/1f313fa61561.twee`): **both compile with exit code 0, zero errors**, producing valid playable HTML. Structural check on the compiled output confirmed 11 and 12 well-formed passages respectively with every `[[Continue->target]]` link resolving to a real passage. The Twine 2 *visual editor* (twinery.org) specifically could not be tested — its React SPA never finishes mounting past the loading spinner in the sandboxed Electron browser used for verification (confirmed IndexedDB works, a service worker registers, but the app still doesn't render even after force-clearing the service worker — a real, diagnosed, tool-specific limitation, not skipped or waved away). Tweego is the official companion compiler in the Twine ecosystem, so this is genuine evidence the export is valid Twee 3, just not a GUI-import screenshot. | **DONE** (compiler-verified) / **BLOCKED** (GUI-verified, real diagnosed tool limitation, not an outage euphemism) |
 
 ## Priority 1 — factual corrections to existing reports (cheap, do immediately)
@@ -239,3 +239,42 @@ quality, real-world relevance) — not a re-run of the earlier audits. Same no-s
   stratum_demo_v5_script.md`) — that work independently hit the same category of tool-infrastructure
   outage mid-write twice, and content was recovered from subagent transcripts and saved directly both
   times rather than lost.
+- **2026-07-08 (seventh session — BLOG_POST.md honesty/currency pass + real P0-1 Tablestore
+  re-verification)**: Two jobs, both done directly, no subagents.
+  - **BLOG_POST.md**: read it in full against this file, `stratum-baseline-fairness-experiment.md`'s
+    n=3 replication section, and `README.md`. Found it stale in exactly the ways expected: it never
+    mentioned the baseline-fairness experiment at all (not even the old n=1 framing — it simply
+    didn't discuss metrics/efficiency), and it predated the disagreement-banner UI, the
+    contradiction-highlighting baseline comparison panel, the hex-map grid/spread fix, and the
+    OSS/Tablestore/SQLite/vendor-neutral-config work. Updated it directly: added a "Does the
+    negotiation actually earn its keep?" section with the honest n=3 numbers (near-tie on the
+    original premise, 2 clear wins on divergence_score, and the real replicated finding —
+    `premature_resolution` 0/3 for Stratum vs. 2/3 for both baselines); added a paragraph on the
+    disagreement banner + baseline comparison panel to "What actually happens each scene"; added the
+    hex-map bug/fix as a fourth bullet in "Building it, honestly"; and expanded "Where Alibaba Cloud
+    shows up" with real OSS/Tablestore usage, SQLite-by-default persistence for self-hosters, the
+    vendor-neutral LLM config, and an explicit no-multi-tenancy caveat. Did not touch anything that
+    was already accurate (the papers section, the Twine-compiler section, and the closing honest-scope
+    section all still held up against current reality).
+  - **P0-1 (Tablestore)**: did not take the sixth session's "user re-enabled it" note at face value.
+    Ran a direct live check: constructed a real `TablestoreWorldBible` against the actual
+    `.env`-configured `stratum-world` instance (no mocks), did a real `put_row` write, then read it
+    back with a fresh client via `load_from_tablestore()` — zero `OTSAuthFailed` errors, real
+    round-trip confirmed, test row deleted afterward to leave the table clean. **Genuinely live**,
+    confirmed directly. Doing the check for real (not just trusting the unit tests) surfaced an actual
+    bug: `load_from_tablestore()` raised `ValueError` against real Tablestore rows because real rows
+    carry a trailing per-column timestamp `(name, value, timestamp)`, while the unit-test fake client
+    only ever returned bare `(name, value)` pairs and so never exercised the real shape. Fixed
+    `backend/cloud_storage.py` to unpack by column name instead of a blind `dict()` call, and updated
+    `tests/test_cloud_storage.py`'s `FakeOTSClient.get_range` to return the real 3-tuple shape so this
+    exact class of drift can't hide behind a passing suite again. Updated the P0-1 row, the
+    `cloud_storage.py` module docstring, `test_cloud_storage.py`'s module docstring, and README's
+    Tablestore paragraph, all of which still said "not live" / described the old `OTSAuthFailed`
+    state as current.
+  - **Scanned the rest of this file** for any other `QUEUED`/`IN PROGRESS` row: none found — every
+    other row is `DONE`, `REVIEWED`, `NOT REPRODUCIBLE`, or `DEFERRED` with a stated reason. P0-2's
+    GUI-import limitation remains an honestly-diagnosed tool limitation, not something actionable
+    from here.
+  - Full suite re-run after the fix: **38/38 passing** (`.venv/bin/python -m pytest tests/ -q`),
+    confirming `tests/conftest.py`'s Tablestore-isolation fixture still keeps the rest of the suite
+    off the now-live real instance.

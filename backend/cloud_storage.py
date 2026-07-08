@@ -20,14 +20,14 @@ Two independent pieces, because they answer two different needs:
   (same add/get/list/update/canon_context surface — this was the explicit
   planned upgrade path called out in that file's own module docstring) that
   persists every world-bible entry as a Tablestore row instead of a Python
-  dict, so canon state survives a server restart. As of this writing the
-  provisioned `stratum-world` Tablestore instance rejects every call with
-  `OTSAuthFailed: The user is disabled.` — confirmed to be instance-specific,
-  not an account-wide credential problem (the identical access key pair
-  successfully lists/reads the OSS bucket) — which is a console-side
-  instance toggle, not a code bug. The class is complete and unit-tested
-  against a fake OTS client (see tests/test_cloud_storage.py) so it starts
-  working the moment that instance is re-enabled, with zero code changes.
+  dict, so canon state survives a server restart. The provisioned
+  `stratum-world` instance previously rejected every call with
+  `OTSAuthFailed: The user is disabled.` (a console-side instance toggle, not
+  a code bug) — the account owner has since re-enabled it, and it's
+  confirmed live again via a direct read/write check
+  (`stratum-critical-review-checklist.md`'s P0-1 row). The class is unit-
+  tested against a fake OTS client (see tests/test_cloud_storage.py) and
+  live-verified against the real instance.
 
 ponytail: no Function Compute usage. Nothing in this project has a real
 serverless-shaped workload (no event trigger, no independently-schedulable
@@ -177,7 +177,13 @@ class TablestoreWorldBible(WorldBible):
         )
         while rows:
             for row in rows:
-                data = dict(row.attribute_columns)["data"]
+                # Real Tablestore rows carry a trailing timestamp per column
+                # (name, value, timestamp) — only the fake test client used a
+                # bare (name, value) pair, so `dict(...)` worked in tests but
+                # raised `ValueError` against the real service. Slicing to the
+                # first two elements handles both shapes.
+                attrs = {col[0]: col[1] for col in row.attribute_columns}
+                data = attrs["data"]
                 entry = WorldBibleEntry.model_validate_json(data)
                 self._entries[entry.id] = entry
             if not next_start:

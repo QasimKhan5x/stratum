@@ -130,10 +130,9 @@ async def run_scene(
 
             # --- Step 4: synthesis — the Arbiter rules, informed by the
             # judge panel, producing one final candidate scene plus the
-            # favored/overruled reasoning that streams to the debate panel
-            # (not yet wired to SSE — see backend/main.py's /api/stream TODO
-            # — but captured here so that wiring is a pure plumbing change
-            # later).
+            # favored/overruled reasoning that streams live to the debate
+            # panel via the "synthesis" DebateEvent emitted below (SSE
+            # carries the full event, synthesis_meta included).
             candidate, synthesis_meta = await asyncio.to_thread(
                 arbiter.synthesize, proposals, critiques, judge_scores, world_bible, revision_note
             )

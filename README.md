@@ -399,12 +399,12 @@ record.
   drop-in, unit-tested (`tests/test_cloud_storage.py`) replacement for the
   in-memory `WorldBible`, wired in via `backend/cloud_storage.py`'s
   `make_world_bible()` factory (SQLite is the default/fallback tier ahead
-  of it now — see Persistence & scalability); it's not live against the
-  provisioned `stratum-world` instance as of this writing because that
-  instance currently rejects all calls with `OTSAuthFailed: The user is
-  disabled.` — confirmed instance-specific, not an account-wide credential
-  problem, since the identical access key pair successfully calls OSS —
-  which needs an Alibaba Cloud console-side fix, not a code fix.
+  of it now — see Persistence & scalability); confirmed live against the
+  real, provisioned `stratum-world` instance via a direct read/write check
+  (see `stratum-critical-review-checklist.md`'s P0-1 row) — it had
+  previously been rejecting all calls with `OTSAuthFailed: The user is
+  disabled.`, a console-side instance toggle the account owner has since
+  fixed.
 - Demo video/artifact note: assembled video and locked replay artifacts are
   expected under git-ignored `demo_recordings/` or attached separately for
   judging.

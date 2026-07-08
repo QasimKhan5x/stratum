@@ -1,12 +1,14 @@
 """Tests for backend/cloud_storage.py.
 
-TablestoreWorldBible is exercised against a fake OTS client (the real
-`stratum-world` instance currently rejects all calls with
-`OTSAuthFailed: The user is disabled.` — a console-side instance toggle, not
-a code bug; see cloud_storage.py's module docstring) so its read/write logic
-is proven correct independent of that external account state. The moment
-the instance is re-enabled, this same code path runs for real with zero
-changes.
+TablestoreWorldBible is exercised against a fake OTS client so its
+read/write logic is proven correct independent of external account state
+(and so the suite never depends on network access or writes real test data
+into production infrastructure — see tests/conftest.py's autouse fixture,
+which forces the rest of the suite off Tablestore for the same reason). The
+real `stratum-world` instance was previously disabled (`OTSAuthFailed: The
+user is disabled.`) and has since been re-enabled by the account owner; this
+same code path has been live-verified directly against it (see
+stratum-critical-review-checklist.md's P0-1 row).
 """
 
 from __future__ import annotations
@@ -40,7 +42,12 @@ class FakeOTSClient:
     def get_range(self, table_name, direction, start_pk, end_pk, limit=None):
         run_id = start_pk[0][1]
         matches = [(k, v) for k, v in self.rows.items() if dict(k)["run_id"] == run_id]
-        rows = [tablestore.Row(list(k), [("data", v)]) for k, v in matches]
+        # Real Tablestore rows include a trailing per-column timestamp
+        # (name, value, timestamp), not the bare (name, value) pair this
+        # fake previously returned — that mismatch let a real bug in
+        # `load_from_tablestore()` (see cloud_storage.py) hide behind a
+        # passing test suite until it was caught against the live instance.
+        rows = [tablestore.Row(list(k), [("data", v, 1)]) for k, v in matches]
         return None, None, rows, None
 
 
