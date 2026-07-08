@@ -342,3 +342,22 @@ quality, real-world relevance) — not a re-run of the earlier audits. Same no-s
     team/account fields) and an explicit remaining-human-steps checklist.
   - Confirmed nothing under `demo_recordings/` was touched, moved, or staged — the demo video and
     voiceover script stay out of git per the existing `.gitignore` and the user's explicit instruction.
+- **2026-07-08 (tenth session — voiceover script revised against three independent blind reviews)**:
+  Commissioned three parallel, independent reviews of `VOICEOVER_SCRIPT.md` (a potential user, a harsh
+  critic, and a QwenCloud-platform judge), each given only the voiceover script, the locked shot script,
+  and project docs, with no cross-visibility into each other's review. All three converged unprompted on
+  the same root finding: several facts already fixed as on-screen captions in earlier production rounds
+  (the "costs more tokens" tradeoff, the Qwen3-Plus/Qwen3-Max model attribution, "MCP-served") never made
+  it into the spoken narration itself — scored 61/100 (harsh critic) and 4/10 (QwenCloud judge) on that
+  basis specifically. Applied 10 fixes directly to `VOICEOVER_SCRIPT.md` (full rationale and reviewer
+  attribution in that file's own "Revision log" section), the two most notable being: (1) restoring the
+  spoken token-cost tradeoff at 1:53, the single biggest miss per all three reviews; (2) a genuine
+  accuracy fix caught along the way, not just a style note — the 0:56 beat's old line ("a different
+  agent, over a different scene") contradicted the locked shot script's own note
+  (`stratum_demo_v5_script.md` line 168) that the Provocateur's critique is from the *same* scene and
+  round as the Lorekeeper's; rewritten to state the real content of that objection instead. Two
+  lower-priority suggestions (a caption-only generalization line, a track-theme wordplay nod) were
+  deliberately not applied because forcing them in would have pushed already-brisk beats past the
+  pacing ceiling used elsewhere in the script — logged as a conscious tradeoff, not an oversight.
+  `VOICEOVER_SCRIPT.md` remains correctly gitignored (`demo_recordings/`); this checklist entry is the
+  only part of this session's work that touches version control.
