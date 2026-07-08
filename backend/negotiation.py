@@ -13,7 +13,7 @@ from typing import Callable
 
 from backend.agents import arbiter, judges, specialists
 from backend.admission_gate import check_admission
-from backend.schemas import AgentRole, DebateEvent, WorldBibleEntry
+from backend.schemas import AgentRole, DebateEvent, EventType, WorldBibleEntry
 from backend.world_bible import WorldBible
 
 EventSink = Callable[[DebateEvent], None]
@@ -53,14 +53,14 @@ async def run_scene(
         The WorldBibleEntry that was ultimately admitted for this scene.
     """
 
-    def emit(event_type: str, agent: str | None, payload: dict, *, attempt: int = 1) -> None:
+    def emit(event_type: EventType, agent: str | None, payload: dict, *, attempt: int = 1) -> None:
         if on_event is not None:
             on_event(
                 DebateEvent(
                     round=round_number,
                     scene=round_number,
                     agent=agent,
-                    event_type=event_type,  # type: ignore[arg-type]
+                    event_type=event_type,
                     payload=payload,
                     attempt=attempt,
                 )

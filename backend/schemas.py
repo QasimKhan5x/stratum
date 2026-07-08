@@ -22,22 +22,25 @@ class WorldBibleEntry(BaseModel):
     image_url: str | None = None
 
 
+EventType = Literal[
+    "seed_entry",
+    "proposal",
+    "critique",
+    "judge_score",
+    "synthesis",
+    "admission_result",
+    "image_ready",
+    "human_injection",
+    "baseline_ready",
+    "scene_failed",
+]
+
+
 class DebateEvent(BaseModel):
     round: int
     scene: int
     agent: str | None = None
-    event_type: Literal[
-        "seed_entry",
-        "proposal",
-        "critique",
-        "judge_score",
-        "synthesis",
-        "admission_result",
-        "image_ready",
-        "human_injection",
-        "baseline_ready",
-        "scene_failed",
-    ]
+    event_type: EventType
     payload: dict
     # Which revision attempt (1-indexed) of this scene's negotiation this
     # event belongs to — see backend.negotiation.run_scene's retry loop.

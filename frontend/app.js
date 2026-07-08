@@ -25,49 +25,63 @@ const GRID_COLS = 6;
 const GRID_ROWS = 5;
 const HEX_SIZE = 34;
 
+// Everything that describes "one negotiation run in progress" — factored
+// out of the `state` object below so connectToStream can reset a new run
+// to this same baseline via one Object.assign instead of an itemized list
+// that silently drifts out of sync with what's actually in `state` (a
+// field added here without also being added to the reset call is a latent
+// stale-data-from-the-previous-run bug, not just a style nit).
+function createRunState() {
+  return {
+    // Tracks the highest round any event has referenced so far. Used to
+    // cap which world-bible entries the map renders (see refreshWorld) —
+    // without this, replaying a finished run's full event history would
+    // show every scene's hex instantly instead of progressively, since
+    // /api/world always returns the run's *current* (i.e. final, for a
+    // finished run) state regardless of how far the paced event replay has
+    // actually gotten.
+    maxRoundSeen: 0,
+    // How many admission-gate rejections a scene has already absorbed, so
+    // a retry's fresh proposals/critiques/judging/synthesis are attributed
+    // to "Round 2" (etc.) instead of being visually indistinguishable from
+    // a clean first pass. The schema has no explicit attempt/revision id,
+    // so this is inferred purely from event order: bumped only once, right
+    // after logging a rejection, using nothing but scene + arrival order.
+    sceneAttempt: new Map(),
+    timelineScenes: new Map(),
+    foundationCount: 0,
+    humanInjectionCount: 0,
+    foundationDividerShown: false,
+    lastLoggedScene: null,
+    currentScene: null,
+    gateBannerTimer: null,
+    disagreementBannerTimer: null,
+    // Consecutive EventSource error events since the last successfully
+    // received message; used to flip a visible "connection lost" state
+    // instead of silently sitting on a stale "connected" indicator forever.
+    sseErrorStreak: 0,
+    canonEntries: new Map(),
+    gateCatchEntry: null,
+    gateCatchSummary: null,
+    metrics: null,
+    baselineText: null,
+    baselineReady: false,
+    runComplete: false,
+  };
+}
+
 // ponytail: single-run-at-a-time client state, no persistence across page
 // reloads. Upgrade path: a run picker backed by a "list runs" endpoint, if
 // juggling multiple concurrent negotiations ever becomes a real need.
 const state = {
   runId: null,
   eventSource: null,
-  // Tracks the highest round any event has referenced so far. Used to cap
-  // which world-bible entries the map renders (see refreshWorld) — without
-  // this, replaying a finished run's full event history would show every
-  // scene's hex instantly instead of progressively, since /api/world always
-  // returns the run's *current* (i.e. final, for a finished run) state
-  // regardless of how far the paced event replay has actually gotten.
-  maxRoundSeen: 0,
-  // How many admission-gate rejections a scene has already absorbed, so a
-  // retry's fresh proposals/critiques/judging/synthesis are attributed to
-  // "Round 2" (etc.) instead of being visually indistinguishable from a
-  // clean first pass. The schema has no explicit attempt/revision id, so
-  // this is inferred purely from event order: bumped only once, right
-  // after logging a rejection, using nothing but scene + arrival order.
-  sceneAttempt: new Map(),
-  timelineScenes: new Map(),
-  foundationCount: 0,
-  humanInjectionCount: 0,
-  foundationDividerShown: false,
-  lastLoggedScene: null,
-  currentScene: null,
-  gateBannerTimer: null,
-  disagreementBannerTimer: null,
-  // Consecutive EventSource error events since the last successfully
-  // received message; used to flip a visible "connection lost" state
-  // instead of silently sitting on a stale "connected" indicator forever.
-  sseErrorStreak: 0,
-  canonEntries: new Map(),
-  gateCatchEntry: null,
-  gateCatchSummary: null,
-  metrics: null,
-  baselineText: null,
-  baselineReady: false,
-  runComplete: false,
   // Demo-recording-only pacing params, captured once at load and stripped
   // from the visible URL (see stripReplayParamsFromUrl) so the address bar
-  // stays clean during actual use.
+  // stays clean during actual use. Deliberately outside createRunState():
+  // it must survive connectToStream's per-run reset, not be wiped by it.
   replayParams: {},
+  ...createRunState(),
 };
 
 const AGENTS = {
@@ -1350,31 +1364,20 @@ function stripReplayParamsFromUrl() {
 
 function connectToStream(runId) {
   if (state.eventSource) state.eventSource.close();
-
-  state.maxRoundSeen = 0;
-  state.sceneAttempt.clear();
-  state.timelineScenes.clear();
-  state.foundationCount = 0;
-  state.humanInjectionCount = 0;
-  state.foundationDividerShown = false;
-  state.lastLoggedScene = null;
-  state.currentScene = null;
-  state.canonEntries.clear();
-  state.gateCatchEntry = null;
-  state.gateCatchSummary = null;
-  state.metrics = null;
-  state.baselineReady = false;
-  state.runComplete = false;
+  // Clear pending timer handles before Object.assign drops the references
+  // below — otherwise a gate/disagreement banner timeout left over from the
+  // previous run still fires later and mutates the *new* run's DOM state.
+  clearTimeout(state.gateBannerTimer);
+  clearTimeout(state.disagreementBannerTimer);
+  Object.assign(state, createRunState());
   judgeScoreAccumulator.clear();
 
   document.getElementById("debate-log").innerHTML = "";
   document.getElementById("baseline-panel").hidden = true;
   document.getElementById("judge-scorecard").hidden = true;
-  state.baselineText = null;
   document.getElementById("gate-banner").hidden = true;
   document.getElementById("gate-banner").className = "gate-banner";
   document.getElementById("disagreement-banner").hidden = true;
-  clearTimeout(state.disagreementBannerTimer);
   document.getElementById("scene-indicator").textContent = "—";
   document.getElementById("moment-headline").textContent = "The negotiation is beginning…";
   document.getElementById("entry-detail").hidden = true;

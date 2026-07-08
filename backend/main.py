@@ -76,8 +76,19 @@ def _run_generation_sync(run: Run, scene_count: int) -> None:
     asyncio.run(run_generation(run, scene_count))
 
 
+def _format_sse(event_type: str, data: str) -> str:
+    return f"event: {event_type}\ndata: {data}\n\n"
+
+
 def _event_to_sse(event: DebateEvent) -> str:
-    return f"event: {event.event_type}\ndata: {event.model_dump_json()}\n\n"
+    return _format_sse(event.event_type, event.model_dump_json())
+
+
+def get_run_or_404(run_id: str) -> Run:
+    run = get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"No run with id '{run_id}'.")
+    return run
 
 
 async def _stream_run(
@@ -135,7 +146,7 @@ async def _stream_run(
             if grace_deadline is None:
                 grace_deadline = asyncio.get_event_loop().time() + grace_seconds
             if asyncio.get_event_loop().time() >= grace_deadline:
-                yield f"event: run_complete\ndata: {json.dumps({'status': run.status, 'error': run.error})}\n\n"
+                yield _format_sse("run_complete", json.dumps({"status": run.status, "error": run.error}))
                 return
         await asyncio.sleep(0.1)
 
@@ -155,9 +166,7 @@ async def api_stream(
     one does) — the live UI never sets them, so they all default to "no
     artificial delay."
     """
-    run = get_run(run_id)
-    if run is None:
-        raise HTTPException(status_code=404, detail=f"No run with id '{run_id}'.")
+    run = get_run_or_404(run_id)
     return StreamingResponse(
         _stream_run(
             run,
@@ -173,9 +182,7 @@ async def api_stream(
 
 @app.get("/api/world/{run_id}")
 def api_world(run_id: str) -> dict:
-    run = get_run(run_id)
-    if run is None:
-        raise HTTPException(status_code=404, detail=f"No run with id '{run_id}'.")
+    run = get_run_or_404(run_id)
     return {
         "status": run.status,
         "error": run.error,
@@ -194,9 +201,7 @@ def api_inject(run_id: str, request: InjectRequest) -> dict:
     next round's specialists will see it in CURRENT CANON immediately since
     world_bible.canon_context() is re-read at the start of every step.
     """
-    run = get_run(run_id)
-    if run is None:
-        raise HTTPException(status_code=404, detail=f"No run with id '{run_id}'.")
+    run = get_run_or_404(run_id)
 
     entry = WorldBibleEntry(
         id=f"human-{uuid.uuid4().hex[:6]}",
@@ -223,9 +228,7 @@ def api_inject(run_id: str, request: InjectRequest) -> dict:
 
 @app.get("/api/export/{run_id}")
 def api_export(run_id: str) -> PlainTextResponse:
-    run = get_run(run_id)
-    if run is None:
-        raise HTTPException(status_code=404, detail=f"No run with id '{run_id}'.")
+    run = get_run_or_404(run_id)
     try:
         twee_text = export_twee(run.world_bible, title=run.premise[:60])
     except ValueError as exc:
@@ -239,9 +242,7 @@ def api_export(run_id: str) -> PlainTextResponse:
 
 @app.get("/api/metrics/{run_id}")
 def api_metrics(run_id: str) -> dict:
-    run = get_run(run_id)
-    if run is None:
-        raise HTTPException(status_code=404, detail=f"No run with id '{run_id}'.")
+    run = get_run_or_404(run_id)
     if run.status != "done":
         raise HTTPException(status_code=409, detail=f"Run status is '{run.status}', not 'done' yet.")
     return compute_comparison(run)

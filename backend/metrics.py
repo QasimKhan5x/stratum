@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from functools import lru_cache
 
 import numpy as np
 
@@ -64,6 +65,14 @@ def _paragraphs(text: str) -> list[str]:
 def _mean_embedding(texts: list[str]) -> list[float]:
     vectors = np.array([embed(t) for t in texts])
     return vectors.mean(axis=0).tolist()
+
+
+@lru_cache(maxsize=1)
+def _generic_genre_centroid() -> list[float]:
+    # _GENERIC_GENRE_CORPUS never changes, so its centroid doesn't either —
+    # cached so /api/metrics (called at least twice per run by the frontend)
+    # doesn't re-embed the same fixed 20 blurbs on every request.
+    return _mean_embedding(_GENERIC_GENRE_CORPUS)
 
 
 def _stratum_contradiction_rate(run: Run) -> float:
@@ -303,7 +312,7 @@ def compute_comparison(
         raise ValueError("Run has no baseline text yet; wait for status 'done'.")
 
     canon_entries = [e for e in run.world_bible.list() if e.status == "canon"]
-    generic_centroid = _mean_embedding(_GENERIC_GENRE_CORPUS)
+    generic_centroid = _generic_genre_centroid()
     stratum_text = "\n\n".join(e.full_text or e.summary for e in canon_entries)
 
     baseline_contradiction_details = _baseline_contradiction_details(run.baseline_text)
