@@ -22,7 +22,7 @@ from backend import sqlite_store
 from backend.metrics import compute_comparison
 from backend.models_client import embed, list_models
 from backend.orchestrator import DEFAULT_SCENE_COUNT, run_generation
-from backend.runs import Run, create_run, get_run
+from backend.runs import Run, RunStatus, create_run, get_run
 from backend.schemas import DebateEvent, WorldBibleEntry
 from backend.cloud_storage import try_upload_export
 from backend.twee_export import export_twee
@@ -149,6 +149,12 @@ async def api_stream(
     slow_pace: float = 0.0,
     grace: float = 0.0,
 ) -> StreamingResponse:
+    """Streams a run's DebateEvents as SSE, replaying history then following
+    live. The pace/slow_from/slow_to/slow_pace/grace query params are demo-
+    recording knobs only (see `_stream_run`'s docstring above for what each
+    one does) — the live UI never sets them, so they all default to "no
+    artificial delay."
+    """
     run = get_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail=f"No run with id '{run_id}'.")
@@ -246,7 +252,7 @@ class ImportRunRequest(BaseModel):
     events: list[DebateEvent]
     world_bible_entries: list[WorldBibleEntry]
     baseline_text: str | None = None
-    status: str = "done"
+    status: RunStatus = "done"
 
 
 @app.post("/api/runs/import")
@@ -277,7 +283,7 @@ def api_import_run(request: ImportRunRequest) -> dict:
         sqlite_store.append_event(run.id, seq, event)
     run.events = list(request.events)
     run.baseline_text = request.baseline_text
-    run.status = request.status  # type: ignore[assignment]
+    run.status = request.status
     sqlite_store.save_run_meta(run)
     return {"run_id": run.id}
 

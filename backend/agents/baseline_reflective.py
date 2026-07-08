@@ -21,7 +21,8 @@ backend/orchestrator.py imports or calls this module.
 
 from __future__ import annotations
 
-from backend.agents.prompts import BASELINE_PROMPT, REFLECTIVE_REVISION_PROMPT
+from backend.agents.baseline import generate_baseline
+from backend.agents.prompts import REFLECTIVE_REVISION_PROMPT
 from backend.models_client import chat
 from backend.runs import Run
 
@@ -29,22 +30,10 @@ _REVISION_MARKER = "REVISED DRAFT:"
 
 
 def _initial_draft(premise: str) -> str:
-    # Identical to generate_baseline's call (backend/agents/baseline.py) —
-    # the only fair way to isolate "what does self-review add" is to start
-    # both baselines from the exact same first draft.
-    user_message = (
-        f"WORLD PREMISE:\n{premise}\n\n"
-        "Write the opening of this interactive fiction world in a single "
-        "continuous pass: the setting, its central tension, and at least "
-        "3-5 connected scenes."
-    )
-    return chat(
-        role="arbiter",
-        messages=[
-            {"role": "system", "content": BASELINE_PROMPT},
-            {"role": "user", "content": user_message},
-        ],
-    )
+    # Delegates to generate_baseline's identical call (backend/agents/
+    # baseline.py) — the only fair way to isolate "what does self-review
+    # add" is to start both baselines from the exact same first draft.
+    return generate_baseline(premise)
 
 
 def _revise_once(premise: str, draft: str) -> str:

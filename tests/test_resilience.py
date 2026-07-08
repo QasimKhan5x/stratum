@@ -17,24 +17,17 @@ regresses, without needing a human to notice a hung or crashed server.
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from backend import negotiation, orchestrator
 from backend.runs import Run
 from backend.schemas import WorldBibleEntry
 from backend.world_bible import WorldBible
-
-
-def _stub_proposal(role) -> dict:
-    return {"role": role.value, "scene_title": "t", "summary": "s", "full_text": "f", "tags": [], "grid_position": [0, 0]}
-
-
-def _stub_critique(critic_role, target_proposal, world_bible) -> dict:
-    return {"critic_role": critic_role.value, "target_role": target_proposal["role"], "objection": "none", "cited_entry_id": "n/a", "hard_flag": False}
-
-
-def _stub_score_all(dimension, proposals, world_bible) -> list[dict]:
-    return [{"dimension": dimension, "role_scored": p["role"], "score": 5, "rationale": "ok"} for p in proposals]
+from tests.conftest import stub_critique as _stub_critique
+from tests.conftest import stub_proposal as _stub_proposal
+from tests.conftest import stub_score_all as _stub_score_all
 
 
 def _stub_synthesize(proposals, critiques, judge_scores, world_bible, revision_note=None):
@@ -74,8 +67,6 @@ def test_transient_error_mid_attempt_is_retried_not_fatal(monkeypatch):
     # instead of actually sleeping.
     monkeypatch.setattr(negotiation.asyncio, "sleep", _instant_sleep)
 
-    import asyncio
-
     result = asyncio.run(negotiation.run_scene(WorldBible(), round_number=1))
     assert result.status == "canon"
     # 4 specialists attempted on the failed pass (one raised, but
@@ -104,8 +95,6 @@ def test_generate_seed_retries_after_a_transient_failure(monkeypatch):
     monkeypatch.setattr(orchestrator, "generate_seed", flaky_generate_seed)
     monkeypatch.setattr(orchestrator.asyncio, "sleep", _instant_sleep)
 
-    import asyncio
-
     seed_entries = asyncio.run(orchestrator._generate_seed_with_retry("a premise"))
 
     assert calls["count"] == 2
@@ -132,8 +121,6 @@ def test_run_generation_never_reraises_on_failure(monkeypatch):
     # since `boom` always raises, all attempts are exhausted here, so stub
     # the sleep out to keep this test instant instead of actually waiting.
     monkeypatch.setattr(orchestrator.asyncio, "sleep", _instant_sleep)
-
-    import asyncio
 
     run = Run(id="test-run", premise="a premise")
     asyncio.run(orchestrator.run_generation(run, scene_count=1))  # must not raise

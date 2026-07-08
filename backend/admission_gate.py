@@ -56,6 +56,8 @@ _CONTRADICTION_SCHEMA = """Respond with JSON only, matching exactly this schema:
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Cosine similarity between two embedding vectors, 0.0 if either is a
+    zero vector (avoids a division-by-zero instead of raising)."""
     vec_a, vec_b = np.array(a), np.array(b)
     denom = np.linalg.norm(vec_a) * np.linalg.norm(vec_b)
     return float(np.dot(vec_a, vec_b) / denom) if denom else 0.0
@@ -112,8 +114,10 @@ def check_admission(candidate: WorldBibleEntry, world_bible: WorldBible) -> dict
     """Check whether a candidate entry may be admitted into the world bible.
 
     Args:
-        candidate: the Arbiter-synthesized entry being considered for
-            admission (see backend.agents.arbiter.synthesize).
+        candidate: the entry being considered for admission — usually an
+            Arbiter-synthesized entry (see backend.agents.arbiter.synthesize),
+            but also used by backend.metrics's baseline-contradiction check
+            against synthetic "BASELINE"-provenance entries.
         world_bible: the current canon the candidate must not contradict.
 
     Returns:

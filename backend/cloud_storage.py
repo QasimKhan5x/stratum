@@ -38,7 +38,6 @@ avoid. OSS + Tablestore are the two services with a genuine use here.
 
 from __future__ import annotations
 
-import json
 import logging
 
 from backend.config import settings
@@ -129,10 +128,7 @@ class TablestoreWorldBible(WorldBible):
 
     def _ensure_table(self) -> None:
         ots = self._tablestore
-        try:
-            existing = {t for t in self._client.list_table()}
-        except Exception:
-            raise
+        existing = {t for t in self._client.list_table()}
         if _TABLE_NAME in existing:
             return
         schema = [("run_id", "STRING"), ("entry_id", "STRING")]
@@ -147,22 +143,6 @@ class TablestoreWorldBible(WorldBible):
         attribute_columns = [("data", entry.model_dump_json(exclude={"embedding"}))]
         row = ots.Row(primary_key, attribute_columns)
         self._client.put_row(_TABLE_NAME, row, condition=ots.Condition("IGNORE"))
-
-    def add(self, entry: WorldBibleEntry) -> None:
-        self._put(entry)
-        self._entries[entry.id] = entry
-
-    def update(self, entry: WorldBibleEntry) -> None:
-        if entry.id not in self._entries:
-            raise KeyError(f"No existing world-bible entry with id '{entry.id}' to update.")
-        self._put(entry)
-        self._entries[entry.id] = entry
-
-    def get(self, entry_id: str) -> WorldBibleEntry | None:
-        return self._entries.get(entry_id)
-
-    def list(self) -> list[WorldBibleEntry]:
-        return list(self._entries.values())
 
     def load_from_tablestore(self) -> None:
         """Rehydrates `_entries` from Tablestore — call once on process

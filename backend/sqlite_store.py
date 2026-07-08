@@ -40,7 +40,6 @@ Run's persistence hooks here are the only two places (`_persist_event`,
 
 from __future__ import annotations
 
-import json
 import os
 import sqlite3
 import threading
@@ -235,13 +234,3 @@ class SQLiteWorldBible(WorldBible):
                 """,
                 (self._run_id, entry.id, entry.model_dump_json()),
             )
-
-    def add(self, entry: WorldBibleEntry) -> None:
-        self._put(entry)
-        self._entries[entry.id] = entry
-
-    def update(self, entry: WorldBibleEntry) -> None:
-        if entry.id not in self._entries:
-            raise KeyError(f"No existing world-bible entry with id '{entry.id}' to update.")
-        self._put(entry)
-        self._entries[entry.id] = entry

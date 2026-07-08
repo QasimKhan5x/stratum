@@ -33,7 +33,7 @@ def normalize_role(raw: str | None) -> str | None:
     return _CANONICAL_BY_UPPER.get(upper, raw)
 
 
-def safe_grid_position(raw) -> tuple[int, int] | None:
+def safe_grid_position(raw: object) -> tuple[int, int] | None:
     """Coerce a model-supplied grid_position into the (int, int) tuple
     WorldBibleEntry.grid_position expects, or None if it isn't a usable
     shape. Used by backend.agents.arbiter.synthesize and

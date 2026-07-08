@@ -5,8 +5,9 @@ throwaway placeholder:
 
 1. The base class both persistence tiers subclass — `backend.sqlite_store.
    SQLiteWorldBible` and `backend.cloud_storage.TablestoreWorldBible` both
-   extend this class, overriding only add/update to write through to their
-   respective stores, while inheriting get/list/canon_context as-is.
+   extend this class, overriding only `_put` to write through to their
+   respective stores, while inheriting add/get/list/update/canon_context
+   as-is.
 2. The last-resort fallback tier in `backend.cloud_storage.make_world_bible`'s
    three-tier factory (Tablestore -> SQLite -> this bare in-memory class),
    used if even a local SQLite file can't be opened (e.g. a read-only
@@ -29,7 +30,15 @@ class WorldBible:
     def __init__(self) -> None:
         self._entries: dict[str, WorldBibleEntry] = {}
 
+    def _put(self, entry: WorldBibleEntry) -> None:
+        """Write-through hook for persisted subclasses (Tablestore/SQLite);
+        a no-op here since the bare in-memory tier has nothing to write
+        through to. add()/update() call this before updating `_entries`,
+        so subclasses only need to override this one method.
+        """
+
     def add(self, entry: WorldBibleEntry) -> None:
+        self._put(entry)
         self._entries[entry.id] = entry
 
     def get(self, entry_id: str) -> WorldBibleEntry | None:
@@ -41,6 +50,7 @@ class WorldBible:
     def update(self, entry: WorldBibleEntry) -> None:
         if entry.id not in self._entries:
             raise KeyError(f"No existing world-bible entry with id '{entry.id}' to update.")
+        self._put(entry)
         self._entries[entry.id] = entry
 
     def canon_context(self) -> str:

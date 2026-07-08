@@ -18,10 +18,14 @@ import contextvars
 import json
 import os
 from contextlib import contextmanager
+from typing import TYPE_CHECKING, Iterator
 
 from openai import OpenAI
 
 from backend.config import settings
+
+if TYPE_CHECKING:
+    from backend.runs import Run
 
 # Confirmed-live QwenCloud model names by default — see
 # stratum-architecture-plan.md for why each role uses this specific model —
@@ -70,7 +74,7 @@ _usage_bucket: contextvars.ContextVar[str] = contextvars.ContextVar("usage_bucke
 
 
 @contextmanager
-def track_run(run, bucket: str = "stratum"):
+def track_run(run: "Run", bucket: str = "stratum") -> Iterator[None]:
     """Attribute every chat()/chat_json() call made inside this block to
     `run`'s token/call counters (see backend.runs.Run), split into the
     "stratum" or "baseline" bucket. Used by backend.orchestrator to scope

@@ -20,24 +20,13 @@ from backend.metrics import _stratum_provenance_depth
 from backend.runs import Run
 from backend.schemas import DebateEvent, WorldBibleEntry
 from backend.world_bible import WorldBible
-
-
-def _stub_proposal(role) -> dict:
-    return {"role": role.value, "scene_title": "t", "summary": "s", "full_text": "f", "tags": [], "grid_position": [0, 0]}
-
-
-def _stub_critique(critic_role, target_proposal, world_bible) -> dict:
-    return {"critic_role": critic_role.value, "target_role": target_proposal["role"], "objection": "none", "cited_entry_id": "n/a", "hard_flag": False}
-
-
-def _stub_score_all(dimension, proposals, world_bible) -> list[dict]:
-    return [{"dimension": dimension, "role_scored": p["role"], "score": 5, "rationale": "ok"} for p in proposals]
+from tests.conftest import stub_critique as _stub_critique
+from tests.conftest import stub_proposal as _stub_proposal
+from tests.conftest import stub_score_all as _stub_score_all
 
 
 def _make_stub_synthesize(entry_id="scene-test", summary="candidate summary"):
     def _stub(proposals, critiques, judge_scores, world_bible, revision_note=None):
-        from backend.schemas import WorldBibleEntry
-
         entry = WorldBibleEntry(
             id=entry_id, summary=summary, full_text="f", status="contested",
             provenance_agent="ARBITER", provenance_round=0,
