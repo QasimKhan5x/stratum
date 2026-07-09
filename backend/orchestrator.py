@@ -1,12 +1,11 @@
 """Runs one full generation for a Run: seed, then N scenes in sequence,
 with the baseline comparison generated concurrently in the background.
 
-Per stratum-architecture-plan.md's dependency-aware task queue (adapted
-from DELM): scene N cannot begin until scene N-1 is admitted, so scenes run
-sequentially here, each reading the world bible the previous one just
-committed to. The baseline agent has no such dependency — it's a single
-call against the raw premise — so it runs concurrently rather than
-blocking the negotiated pipeline.
+This is a dependency-aware task queue (adapted from DELM): scene N cannot
+begin until scene N-1 is admitted, so scenes run sequentially here, each
+reading the world bible the previous one just committed to. The baseline
+agent has no such dependency — it's a single call against the raw premise
+— so it runs concurrently rather than blocking the negotiated pipeline.
 """
 
 from __future__ import annotations

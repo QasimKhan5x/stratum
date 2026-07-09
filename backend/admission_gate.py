@@ -1,8 +1,7 @@
 """Verified admission gate: checks a candidate scene against canon before
 it is committed to the world bible.
 
-Per stratum-architecture-plan.md ("Why the admission gate is two-stage"),
-this is a direct adaptation of DELM's corpus-grounded verification into
+This is a direct adaptation of DELM's corpus-grounded verification into
 consistency-grounded verification against a living, agent-authored world
 model: not "is this true" but "does this contradict what we've already
 agreed."

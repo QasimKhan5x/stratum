@@ -27,10 +27,11 @@ from backend.config import settings
 if TYPE_CHECKING:
     from backend.runs import Run
 
-# Confirmed-live QwenCloud model names by default — see
-# stratum-architecture-plan.md for why each role uses this specific model —
-# each overridable independently via LLM_MODEL_<ROLE> (e.g. LLM_MODEL_JUDGE)
-# for anyone pointing this at a different provider's model catalog.
+# Confirmed-live QwenCloud model names by default, each overridable
+# independently via LLM_MODEL_<ROLE> (e.g. LLM_MODEL_JUDGE) for anyone
+# pointing this at a different provider's model catalog. See each agent
+# module's docstring (backend/agents/) for that role's model choice and
+# rationale.
 _DEFAULT_MODEL_ROLES: dict[str, str] = {
     "seed": "qwen3.7-max",
     "arbiter": "qwen3.7-max",

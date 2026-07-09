@@ -6,8 +6,7 @@ the tier used for the actual hackathon submission's cloud-deployment proof,
 but it only works with real Alibaba Cloud credentials. Without this module,
 forking the repo without those credentials meant every run lived only in one
 process's memory (`backend.runs._RUNS`) and vanished on restart — a real
-blocker for "clone it and self-host it" (see
-stratum-critical-review-checklist.md's OSS-productization discussion).
+blocker for "clone it and self-host it."
 
 Uses Python's stdlib `sqlite3` — zero new dependencies, works out of the box.
 One file (`STRATUM_DB_PATH`, default `./stratum.db`) holds three tables:

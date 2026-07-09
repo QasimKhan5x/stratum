@@ -2,11 +2,10 @@
 Tablestore-backed WorldBible.
 
 This is the concrete answer to the hackathon's "proof of Alibaba Cloud
-deployment" requirement (see stratum-hackathon-reference.md's "Submission
-requirements") — a real code file using real Alibaba Cloud SDKs
+deployment" requirement — a real code file using real Alibaba Cloud SDKs
 (`tablestore`, `oss2`) against the actually-provisioned instance/bucket in
-`.env`, not DashScope (which is QwenCloud, a distinct product per that same
-doc) and not just "the backend happens to run on an ECS box."
+`.env`, not DashScope (which is QwenCloud, a distinct product from Alibaba
+Cloud) and not just "the backend happens to run on an ECS box."
 
 Two independent pieces, because they answer two different needs:
 
@@ -24,8 +23,7 @@ Two independent pieces, because they answer two different needs:
   `stratum-world` instance previously rejected every call with
   `OTSAuthFailed: The user is disabled.` (a console-side instance toggle, not
   a code bug) — the account owner has since re-enabled it, and it's
-  confirmed live again via a direct read/write check
-  (`stratum-critical-review-checklist.md`'s P0-1 row). The class is unit-
+  confirmed live again via a direct read/write check. The class is unit-
   tested against a fake OTS client (see tests/test_cloud_storage.py) and
   live-verified against the real instance.
 

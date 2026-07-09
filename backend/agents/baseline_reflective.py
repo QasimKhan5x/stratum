@@ -5,8 +5,7 @@ instead of multi-agent debate.
 This exists to answer a specific fairness question the original baseline
 (backend/agents/baseline.py) cannot: is Stratum's efficiency-gain claim a
 categorical capability of structured multi-agent negotiation, or just an
-artifact of spending ~13x more compute than a single call? See
-stratum-baseline-fairness-experiment.md for the experiment this supports.
+artifact of spending ~13x more compute than a single call?
 
 Deliberately does NOT touch backend/negotiation.py or any specialist/judge/
 arbiter machinery — this is one agent talking to itself in a loop, not a

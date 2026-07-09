@@ -1,6 +1,5 @@
-"""Regression tests for two real failure modes hit during live testing
-(see stratum-demo-and-verification.md's verification loop, step 2 —
-state-machine checks with mocked agent responses):
+"""Regression tests for two real failure modes hit during live testing,
+reproduced here as state-machine checks with mocked agent responses:
 
 1. A transient error mid-attempt (observed in practice: DashScope request
    timeouts under load) used to burn the whole scene instead of retrying.

@@ -1,9 +1,8 @@
 """FastAPI orchestrator app.
 
-Per stratum-architecture-plan.md, this process is intended to be a
-persistent server (ECS in production) since SSE requires long-lived
-connections that Function Compute is not designed for. For local
-development it's run with `uvicorn`.
+This process is intended to be a persistent server (ECS in production)
+since SSE requires long-lived connections that Function Compute is not
+designed for. For local development it's run with `uvicorn`.
 """
 
 from __future__ import annotations
@@ -197,9 +196,9 @@ class InjectRequest(BaseModel):
 @app.post("/api/inject/{run_id}")
 def api_inject(run_id: str, request: InjectRequest) -> dict:
     """Admits a human-submitted world constraint directly into the world
-    bible without pausing generation, per stratum-project-overview.md — the
-    next round's specialists will see it in CURRENT CANON immediately since
-    world_bible.canon_context() is re-read at the start of every step.
+    bible without pausing generation — the next round's specialists will
+    see it in CURRENT CANON immediately since world_bible.canon_context()
+    is re-read at the start of every step.
     """
     run = get_run_or_404(run_id)
 
@@ -269,9 +268,9 @@ def api_import_run(request: ImportRunRequest) -> dict:
     Tablestore already make a *previously-run* run's data durable across a
     restart (see backend/runs.py, backend/sqlite_store.py), but this endpoint
     is what lets data that was never a live run on this server in the first
-    place become displayable through the normal UI. This is what makes
-    stratum-demo-and-verification.md's "pre-generate and replay" fallback
-    actually usable, not just within a single server session.
+    place become displayable through the normal UI. This is what makes the
+    "pre-generate and replay" fallback actually usable, not just within a
+    single server session.
     """
     run = create_run(request.premise)
     for entry in request.world_bible_entries:

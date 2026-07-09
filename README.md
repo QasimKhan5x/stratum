@@ -36,9 +36,9 @@ if you want to point the same machinery at a different domain.
 - **Researchers** — two independent reasons to fork this, not one:
   (1) the quality-vs-compute question — does adversarial multi-agent
   negotiation actually buy anything over a single agent with a matched
-  compute budget? `backend/metrics.py` and
-  `stratum-baseline-fairness-experiment.md` are the harness and the
-  (honestly reported, including where it doesn't fully hold up) result; and
+  compute budget? `backend/metrics.py` is the harness for that comparison;
+  see [On "efficiency gain"](#architecture) below for the (honestly
+  reported, including where it doesn't fully hold up) result; and
   (2) multi-agent coordination failure modes as a first-class design
   concern, not an afterthought — the admission gate's citation requirements
   and the Harmonist-only `hard_flag` escalation path are a direct mitigation
@@ -130,20 +130,18 @@ scene (four proposals, four critiques, four judge-dimension batches, one
 synthesis, plus occasional retries) against exactly one call for the
 single-shot baseline — see `/api/metrics`'s `token_usage` figure. The
 efficiency gain isn't fewer tokens; the honest claim, replicated across 3
-premises (see `stratum-baseline-fairness-experiment.md`), is narrower than
-"no single agent can do this at any price": a single agent given a
-*matched* compute budget spent on self-critique/revision still closes most
-of the gap on creative-divergence score (noisy, premise-dependent, not a
-clean win either way). What replicated 3-for-3, and is now a real
-quantified metric rather than one person's reading of one baseline's
-prose: Stratum's admission gate protected a deliberately contested,
-seed-marked fact in every premise, while a compute-matched single agent
-confidently resolved it anyway in 2 of 3. The baseline-comparison panel in
-the frontend renders this directly: the single-shot baseline's text with
-every contradicting paragraph highlighted inline, so the tradeoff is
-something you can read, not just a number. Reported as found, not
-softened; see that writeup for full methodology, the n=3 replication, and
-caveats.
+premises, is narrower than "no single agent can do this at any price": a
+single agent given a *matched* compute budget spent on self-critique/
+revision still closes most of the gap on creative-divergence score (noisy,
+premise-dependent, not a clean win either way). What replicated 3-for-3,
+and is now a real quantified metric rather than one person's reading of
+one baseline's prose: Stratum's admission gate protected a deliberately
+contested, seed-marked fact in every premise, while a compute-matched
+single agent confidently resolved it anyway in 2 of 3. The
+baseline-comparison panel in the frontend renders this directly: the
+single-shot baseline's text with every contradicting paragraph highlighted
+inline, so the tradeoff is something you can read, not just a number.
+Reported as found, not softened.
 
 ## Core engine vs. reference app
 
@@ -355,37 +353,14 @@ record.
   `make_world_bible()` factory (SQLite is the default/fallback tier ahead
   of it now — see Persistence & scalability); confirmed live against the
   real, provisioned `stratum-world` instance via a direct read/write check
-  (see `stratum-critical-review-checklist.md`'s P0-1 row) — it had
-  previously been rejecting all calls with `OTSAuthFailed: The user is
-  disabled.`, a console-side instance toggle the account owner has since
-  fixed.
+  — it had previously been rejecting all calls with `OTSAuthFailed: The
+  user is disabled.`, a console-side instance toggle the account owner has
+  since fixed.
 - Demo video/artifact note: assembled video and locked replay artifacts are
   expected under git-ignored `demo_recordings/` or attached separately for
   judging.
-- Efficiency-gain fairness check: `stratum-baseline-fairness-experiment.md`
-  — the naive single-shot baseline above is the weakest possible
-  comparison; this document tests against an equal-compute-budget single
-  agent instead and reports what was actually found, including where it
-  weakens the strong version of the pitch.
-
-## Further reading
-
-Full architecture rationale, research foundations, hackathon context, and
-the demo verification plan live in the planning docs at the repo root:
-
-- `stratum-project-overview.md`
-- `stratum-architecture-plan.md`
-- `stratum-hackathon-reference.md`
-- `stratum-demo-and-verification.md`
-- `stratum-demo-premise.md`
-- `stratum-baseline-fairness-experiment.md` — the equal-compute-budget
-  baseline experiment referenced above: real methodology, real numbers,
-  honest interpretation.
-- `stratum-audit-fix-plan.md` — the live tracker for every issue raised by
-  an external frontend/demo-readiness critique and a technical backend/AI
-  audit, and how each was actually fixed.
-- `stratum-critical-review-checklist.md` — a second, later review round
-  (map quality, disagreement-visibility UX, the efficiency-gain claim,
-  scalability, and OSS/forkability), and the live tracker for how each was
-  addressed — including the discussion this README's Persistence, Core
-  engine, and Extending sections came out of.
+- Efficiency-gain fairness check: see "On efficiency gain" in the
+  Architecture section above — the naive single-shot baseline is the
+  weakest possible comparison; the reported result also checks against an
+  equal-compute-budget single agent and states what was actually found,
+  including where it weakens the strong version of the pitch.

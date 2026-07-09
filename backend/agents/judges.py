@@ -1,10 +1,10 @@
 """The four dimension-specific judges (coherence, playability, surprise, tone).
 
-Per stratum-architecture-plan.md, judges run on the "judge" model role
-(qwen3.6-flash, thinking off) — cheapest tier, since scoring against a
-single stated dimension is low-complexity and highest-volume relative to
-value. Escalate to "specialist" (qwen3.7-plus) if judge output proves
-inconsistent in testing.
+Judges run on the "judge" model role (qwen3.6-flash, thinking off) —
+cheapest tier, since scoring against a single stated dimension is
+low-complexity and highest-volume relative to value. Escalate to
+"specialist" (qwen3.7-plus) if judge output proves inconsistent in
+testing.
 """
 
 from __future__ import annotations

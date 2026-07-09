@@ -1,11 +1,10 @@
 """Baseline vs. Stratum comparison metrics for the efficiency-gain demo beat.
 
-Per stratum-project-overview.md, the track requires "a measurable efficiency
-gain over single-agent baselines" — three numbers, made concrete here:
-contradiction rate, creative-divergence score, and provenance depth. See
-stratum-demo-and-verification.md's warning that this needs to be checked
-for real on the actual demo premise, not assumed from the architecture
-being sound.
+The hackathon track requires "a measurable efficiency gain over
+single-agent baselines" — three numbers, made concrete here: contradiction
+rate, creative-divergence score, and provenance depth, checked for real on
+the actual demo premise rather than assumed from the architecture being
+sound.
 """
 
 from __future__ import annotations
@@ -99,10 +98,10 @@ def _baseline_contradiction_details(baseline_text: str) -> list[dict]:
     paragraph has nothing yet to contradict): {"index", "text" (truncated),
     "contradicts", "reason", "conflicts_with_index"}. This is the evidence
     behind contradiction_rate's baseline number, not just the aggregate
-    rate — per stratum-critical-review-checklist.md, an abstract percentage
-    doesn't land with a reader the way pointing at the actual sentence that
-    contradicts an actual earlier sentence does; the frontend's baseline
-    comparison panel highlights exactly these paragraphs.
+    rate — an abstract percentage doesn't land with a reader the way
+    pointing at the actual sentence that contradicts an actual earlier
+    sentence does; the frontend's baseline comparison panel highlights
+    exactly these paragraphs.
     """
     paragraphs = _paragraphs(baseline_text)
     if len(paragraphs) < 2:
@@ -223,12 +222,11 @@ def extract_contested_description(run: Run) -> str | None:
 
 
 def _resolves_contested_fact(text: str, contested_description: str) -> bool:
-    """Per stratum-baseline-fairness-experiment.md's disclosed gap: does
-    `text` prematurely resolve `contested_description` into one confident
-    answer? Uses the same LLM-judge pattern as the admission gate's
-    contradiction check (backend.admission_gate.check_admission) rather than
-    an embedding heuristic, since "did this preserve ambiguity" is a reading-
-    comprehension judgment, not a similarity measure.
+    """Does `text` prematurely resolve `contested_description` into one
+    confident answer? Uses the same LLM-judge pattern as the admission
+    gate's contradiction check (backend.admission_gate.check_admission)
+    rather than an embedding heuristic, since "did this preserve ambiguity"
+    is a reading-comprehension judgment, not a similarity measure.
     """
     result = chat_json(
         role="arbiter",
@@ -265,24 +263,23 @@ def compute_comparison(
         calls (backend.models_client.track_run). Unlike the other three,
         higher is *expected*, not better — Stratum trades materially more
         tokens/calls per scene for the quality gains the other three
-        metrics measure. See README.md / stratum-project-overview.md for
-        why that tradeoff is the actual "efficiency gain" claim, not a
-        contradiction of it.
+        metrics measure. See README.md's "On efficiency gain" for why that
+        tradeoff is the actual "efficiency gain" claim, not a contradiction
+        of it.
       - contradiction_detail (top-level key, only present when the baseline
         has 2+ paragraphs): {"baseline": [...]}, the actual per-paragraph
         evidence behind contradiction_rate's baseline number — which
         specific paragraph contradicted which earlier one, and why. Exists
         because an abstract rate doesn't land with a reader the way
-        pointing at the real contradicting sentence does (see
-        stratum-critical-review-checklist.md); the frontend's baseline
-        comparison panel renders this to highlight the actual paragraphs.
+        pointing at the real contradicting sentence does; the frontend's
+        baseline comparison panel renders this to highlight the actual
+        paragraphs.
       - premature_resolution: 1.0 if the variant's own text collapses the
         run's seed-marked "contested" fact into one confident answer, 0.0 if
         it preserves the ambiguity; None (key omitted from the affected
         column) if this run's seed produced no contested entry to check
-        against. Lower is better. This is the fourth metric
-        stratum-baseline-fairness-experiment.md flagged as missing — the
-        prior three numbers could not distinguish "negotiation has a
+        against. Lower is better. This is a fourth metric added because the
+        prior three numbers alone could not distinguish "negotiation has a
         categorical creative advantage" from "more compute helps any
         approach"; this one targets the *specific* failure mode Stratum's
         Lorekeeper/admission-gate mechanism claims to prevent that a flat

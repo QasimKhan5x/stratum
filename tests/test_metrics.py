@@ -1,6 +1,6 @@
-"""Tests for backend/metrics.py's premature_resolution metric (P2-3 in
-stratum-critical-review-checklist.md): does a variant's own text collapse a
-run's seed-marked "contested" fact into one confident answer?
+"""Tests for backend/metrics.py's premature_resolution metric: does a
+variant's own text collapse a run's seed-marked "contested" fact into one
+confident answer?
 
 Mocks embed()/chat_json() throughout (no real DashScope calls) since only
 the wiring/logic is under test here — the real-API version of this question
@@ -87,8 +87,7 @@ def test_compute_comparison_flags_a_variant_that_collapses_the_contested_fact(mo
 
 def test_compute_comparison_surfaces_per_paragraph_contradiction_evidence(monkeypatch):
     """contradiction_detail must name the actual contradicting paragraph and
-    which earlier paragraph it conflicts with — not just an aggregate rate
-    (see stratum-critical-review-checklist.md's quality-vs-compute ask)."""
+    which earlier paragraph it conflicts with — not just an aggregate rate."""
     run = create_run("premise")
     run.status = "done"
     run.baseline_text = "The bridge is intact.\n\nThe bridge collapsed years ago.\n\nA calm evening follows."

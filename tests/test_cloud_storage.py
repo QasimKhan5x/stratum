@@ -7,8 +7,7 @@ into production infrastructure — see tests/conftest.py's autouse fixture,
 which forces the rest of the suite off Tablestore for the same reason). The
 real `stratum-world` instance was previously disabled (`OTSAuthFailed: The
 user is disabled.`) and has since been re-enabled by the account owner; this
-same code path has been live-verified directly against it (see
-stratum-critical-review-checklist.md's P0-1 row).
+same code path has been live-verified directly against it.
 """
 
 from __future__ import annotations

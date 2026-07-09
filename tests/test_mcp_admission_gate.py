@@ -4,9 +4,9 @@
 Exercises two paths without hitting DashScope: a genuine MCP round trip
 through the real mcp_world_bible_server.py subprocess (success case), and
 the in-process fallback the gate must use if that MCP call fails (failure
-case) — see stratum-demo-and-verification.md's "never let a component's
-failure crash the whole run" philosophy, and admission_gate._embedding_screen's
-docstring.
+case) — this follows a "never let a component's failure crash the whole
+run" philosophy; see admission_gate._embedding_screen's docstring for the
+fallback details.
 
 Uses tiny fabricated embedding vectors (not real text-embedding-v4 output)
 since only the cosine-similarity math matters here, not embedding quality —

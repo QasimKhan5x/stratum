@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Save a completed run's full state to disk for later replay.
 
-Per stratum-demo-and-verification.md's "pre-generate and replay" fallback:
-record a real run once, then replay it at a controlled pace (see
-backend.main's /api/stream ?pace/&slow_from/&slow_to params) for demo
-recording, without depending on live model calls working on the one take
-that gets recorded.
+Implements a "pre-generate and replay" fallback: record a real run once,
+then replay it at a controlled pace (see backend.main's /api/stream
+?pace/&slow_from/&slow_to params) for demo recording, without depending on
+live model calls working on the one take that gets recorded.
 
 The saved directory is exactly what POST /api/runs/import expects, so a
 run can be restored into a *different* server process (e.g. after a

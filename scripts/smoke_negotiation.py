@@ -8,10 +8,10 @@ takes real wall-clock time. Run by hand after changing any agent-logic code:
     .venv/bin/python scripts/smoke_negotiation.py
 
 Prints the seeded canon, the admitted scene, and which proposal the Arbiter
-favored/overruled, so a human can actually read the output quality — per
-stratum-demo-and-verification.md's verification loop, passing this doesn't
-prove the negotiation is *interesting*, only that it runs correctly end to
-end. Judging output quality still needs a human reading it.
+favored/overruled, so a human can actually read the output quality —
+passing this doesn't prove the negotiation is *interesting*, only that it
+runs correctly end to end. Judging output quality still needs a human
+reading it.
 """
 
 from __future__ import annotations

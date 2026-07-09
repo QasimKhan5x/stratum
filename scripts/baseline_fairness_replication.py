@@ -2,24 +2,23 @@
 """Replication of the reflective-baseline fairness experiment across
 multiple premises, at closer-to-full token-budget parity.
 
-Answers stratum-critical-review-checklist.md's P2-1/P2-2:
+Answers two open questions about the original experiment:
 
-- P2-1: the original experiment (stratum-baseline-fairness-experiment.md)
-  was n=1, one premise, one run — this runs it across 3 distinct premises
-  (the locked demo premise plus two new ones, each with its own seed-marked
-  contested question) so the divergence_score finding can be checked for
-  consistency rather than trusted from a single roll.
-- P2-2: the original reflective baseline hit its `max_rounds=10` safety cap
-  at ~47% of the target token budget, never actually reaching parity. This
+- The original experiment was n=1, one premise, one run — this runs it
+  across 3 distinct premises (the locked demo premise plus two new ones,
+  each with its own seed-marked contested question) so the
+  divergence_score finding can be checked for consistency rather than
+  trusted from a single roll.
+- The original reflective baseline hit its `max_rounds=10` safety cap at
+  ~47% of the target token budget, never actually reaching parity. This
   run raises the cap to `MAX_REFLECTIVE_ROUNDS` (see below) specifically so
   it can get much closer to (or reach) full parity, and reports the actual
   budget-utilization percentage achieved per premise rather than assuming
   it.
 
-Also computes the new premature_resolution metric (P2-3, backend/metrics.py)
-across every premise/variant, since that's the actual test of the
-categorical-advantage claim per the review — not one of the original three
-numbers.
+Also computes the premature_resolution metric (backend/metrics.py) across
+every premise/variant, since that's the actual test of the
+categorical-advantage claim — not one of the original three numbers.
 
 This is a one-off research script, real DashScope calls, real wall-clock
 time (expect this to run for an extended period across 3 premises x 3
@@ -41,9 +40,9 @@ from backend.models_client import track_run
 from backend.orchestrator import run_generation
 from backend.runs import Run, create_run
 
-# Premise 1: the locked demo premise verbatim (stratum-demo-premise.md),
-# included so this replication is directly comparable to the original n=1
-# result. Premises 2-3 are new, each genre-distinct from the demo premise
+# Premise 1: the locked demo premise verbatim, included so this
+# replication is directly comparable to the original n=1 result. Premises
+# 2-3 are new, each genre-distinct from the demo premise
 # and from each other (per backend/metrics.py's own _GENERIC_GENRE_CORPUS
 # diversity rationale), each with its own explicit three-way disputed
 # question so the seed step has a real contested fact to plant and the new
@@ -87,7 +86,7 @@ PREMISES = [
 SCENE_COUNT = 2
 
 # Raised from the original experiment's 10 specifically to get much closer
-# to real token-budget parity (P2-2) rather than stopping at ~47%. Still a
+# to real token-budget parity rather than stopping at ~47%. Still a
 # hard cap, not unbounded, against runaway cost if a premise's Stratum run
 # is unusually token-heavy.
 MAX_REFLECTIVE_ROUNDS = 30

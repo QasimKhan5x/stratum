@@ -1,10 +1,7 @@
 """Scene illustration via qwen-image-2.0-pro.
 
-Per stratum-project-overview.md's "five distinct QwenCloud model roles"
-claim and the locked demo script's "the illustration populates the hex"
-beat (stratum-demo-and-verification.md, 1:00-2:00). One image per admitted
-scene, not per proposal or per seed entry — kept to what the demo actually
-shows, not maximized for its own sake.
+One image per admitted scene, not per proposal or per seed entry — kept to
+what the demo actually shows, not maximized for its own sake.
 
 Image generation is not exposed on DashScope's OpenAI-compatible endpoint
 (backend.models_client) — it requires the native DashScope SDK's

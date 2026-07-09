@@ -1,9 +1,9 @@
 """The SeedAgent: produces the initial world-bible entries from a premise.
 
-Per stratum-architecture-plan.md, the SeedAgent runs on the "seed" model
-role (qwen3.7-max) and is the only step that runs before any negotiation.
-Its response is structured JSON, so backend.models_client.chat_json
-intentionally disables DashScope thinking mode for this call.
+The SeedAgent runs on the "seed" model role (qwen3.7-max) and is the only
+step that runs before any negotiation. Its response is structured JSON,
+so backend.models_client.chat_json intentionally disables DashScope
+thinking mode for this call.
 """
 
 from __future__ import annotations

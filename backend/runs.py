@@ -2,8 +2,9 @@
 sharing (see backend/sqlite_store.py), with an in-memory dict as a hot-path
 cache for the common single-process case.
 
-A "run" bundles one WorldBible and its full event log (for replay/
-provenance per stratum-architecture-plan.md's "debate event" data shape).
+A "run" bundles one WorldBible and its full event log (for replay and
+provenance — see backend/schemas.py's DebateEvent for the shape each
+event takes).
 backend.main's SSE endpoint polls `events` directly by index rather than
 draining a queue — a shared asyncio.Queue was tried first, but it
 double-yields every event whenever a subscriber connects after the run

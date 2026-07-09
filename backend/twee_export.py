@@ -1,7 +1,6 @@
 """Exports the world bible as valid Twee 3 source text.
 
-Per stratum-architecture-plan.md's "Data shapes" section and the official
-Twee 3 specification, the export must produce:
+Per the official Twee 3 specification, the export must produce:
 
   - A `StoryData` passage carrying a required IFID (a capital-letter v4
     UUID), the target story `format` field, and an optional `tag-colors`
@@ -13,10 +12,10 @@ Twee 3 specification, the export must produce:
     text containing `[[link text->Target Passage]]` syntax for navigation
     between passages.
 
-See stratum-demo-and-verification.md for the concrete acceptance check:
-the exported file must open correctly in real Twine desktop / twinejs,
-with a well-formed IFID, a recognized format value, tag colors rendering
-as expected, and all links resolving to passages that actually exist.
+The acceptance check: the exported file must open correctly in real Twine
+desktop / twinejs, with a well-formed IFID, a recognized format value, tag
+colors rendering as expected, and all links resolving to passages that
+actually exist.
 """
 
 from __future__ import annotations

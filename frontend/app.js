@@ -1017,10 +1017,10 @@ function renderComparison() {
 // Renders the baseline column paragraph-by-paragraph so a self-contradiction
 // is something a reader SEES (a flagged paragraph, the earlier paragraph it
 // conflicts with, and the gate's real reason) rather than something they
-// have to take on faith from an abstract contradiction_rate percentage. Per
-// stratum-critical-review-checklist.md's "numbers won't interest judges"
-// finding — this is the visual proof, backend.metrics.compute_comparison's
-// contradiction_detail is the evidence behind it.
+// have to take on faith from an abstract contradiction_rate percentage —
+// numbers alone don't land with judges; this is the visual proof,
+// backend.metrics.compute_comparison's contradiction_detail is the evidence
+// behind it.
 function renderBaselineText() {
   const el = document.getElementById("baseline-text");
   if (!el) return;

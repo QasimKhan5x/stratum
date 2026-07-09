@@ -1,8 +1,7 @@
 """The four specialist agents: thesis (propose) and antithesis (critique).
 
-Per stratum-architecture-plan.md, each specialist runs on the
-"specialist" model role (qwen3.7-plus, thinking off) and reads the
-current world bible before acting.
+Each specialist runs on the "specialist" model role (qwen3.7-plus,
+thinking off) and reads the current world bible before acting.
 """
 
 from __future__ import annotations

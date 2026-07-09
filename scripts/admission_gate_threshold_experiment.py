@@ -1,4 +1,5 @@
-"""Real-API experiment answering stratum-critical-review-checklist.md's P1-2:
+"""Real-API experiment answering a specific question about the admission
+gate's calibration:
 
 Is the admission gate's two-stage design ("cheap embedding screen narrows
 candidates, expensive LLM call only fires on the rare high-similarity

@@ -27,8 +27,8 @@ test-results/
 
 # One-off research script output (scripts/reflective_baseline_experiment.py)
 # — regenerable, real DashScope output, not meant to live in git history.
-# The writeup that cites it (stratum-baseline-fairness-experiment.md) does
-# live in git, quoting the numbers directly, so this isn't load-bearing.
+# The numbers it produced are quoted directly in README.md, so this isn't
+# load-bearing.
 experiments/
 
 # local self-host database (backend/sqlite_store.py) — real generated run

@@ -1,8 +1,6 @@
 """The negotiation engine's per-scene control flow.
 
-See stratum-architecture-plan.md's "Data flow, end to end" (steps 2-5) and
-stratum-demo-and-verification.md's state-machine-check description for the
-lifecycle this implements: thesis -> antithesis -> judging -> synthesis ->
+The lifecycle: thesis -> antithesis -> judging -> synthesis ->
 admission-check -> (targeted re-negotiation on rejection).
 """
 

@@ -2,13 +2,12 @@
 """Reflective-baseline fairness experiment.
 
 Runs the real negotiated pipeline once against Stratum's locked demo
-premise ("Tideglass Reach", see stratum-demo-premise.md), reads its real
-total_tokens to calibrate an equal-compute-budget reflective baseline (see
+premise ("Tideglass Reach"), reads its real total_tokens to calibrate an
+equal-compute-budget reflective baseline (see
 backend/agents/baseline_reflective.py), then computes all three variants —
 stratum / naive baseline / reflective baseline — via
 backend.metrics.compute_comparison, and saves the raw text plus a JSON
-report. See stratum-baseline-fairness-experiment.md for the writeup this
-produced.
+report.
 
 Deliberately standalone: does not modify or wrap
 backend.orchestrator.run_generation's behavior, does not run on every live
@@ -31,8 +30,8 @@ from backend.models_client import track_run
 from backend.orchestrator import run_generation
 from backend.runs import Run, create_run
 
-# Copied verbatim from stratum-demo-premise.md's locked "one-paragraph
-# premise" field, so this experiment runs against the exact demo premise.
+# The locked demo premise, copied verbatim so this experiment runs against
+# exactly what the demo uses.
 PREMISE = (
     'Tideglass Reach: a coastal city, drowned for two generations, has just '
     'resurfaced after an unexplained "long ebb." The Tideglass Guild and the '
@@ -43,8 +42,7 @@ PREMISE = (
 
 # Reduced from the demo's live default of 4 (backend.orchestrator.
 # DEFAULT_SCENE_COUNT) purely to bound real API spend/wall-clock time for
-# this one-off research run. Disclosed in the writeup, not hidden — see
-# stratum-baseline-fairness-experiment.md's methodology section.
+# this one-off research run.
 SCENE_COUNT = 2
 MAX_REFLECTIVE_ROUNDS = 10
 

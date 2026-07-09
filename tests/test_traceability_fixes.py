@@ -1,7 +1,6 @@
-"""Regression tests for the technical-audit fix batch (see
-stratum-audit-fix-plan.md's Part B): attempt numbering, role normalization,
-judge_score grouping, synthesis summary, phase tagging, and the SSE
-double-yield bug in backend.main._stream_run.
+"""Regression tests for the technical-audit fix batch: attempt numbering,
+role normalization, judge_score grouping, synthesis summary, phase
+tagging, and the SSE double-yield bug in backend.main._stream_run.
 
 Mocked at the agent-call boundary (same pattern as test_resilience.py) —
 no real DashScope calls, no real API cost.

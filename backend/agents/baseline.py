@@ -1,10 +1,9 @@
 """The baseline agent: single-agent comparison, no debate loop.
 
-Per stratum-architecture-plan.md, the baseline deliberately gets no seed
-step and no world-bible structure — a single sequential "arbiter"-role
-(qwen3.7-max) call with the same premise, no scaffolding — to isolate the
-effect of structured, negotiated generation for the efficiency-gain
-comparison.
+The baseline deliberately gets no seed step and no world-bible structure —
+a single sequential "arbiter"-role (qwen3.7-max) call with the same
+premise, no scaffolding — to isolate the effect of structured, negotiated
+generation for the efficiency-gain comparison.
 """
 
 from __future__ import annotations

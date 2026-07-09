@@ -2,11 +2,11 @@
 as tools: `check_contradiction` and `search_world_bible`.
 
 Runs as a stdio subprocess, spawned fresh per call by
-backend.mcp_world_bible_client (see that module's docstring for why). Per
-stratum-architecture-plan.md's "Technical Depth" goals, this is the one
-genuinely load-bearing MCP integration in the project: admission_gate.py's
-stage-1 embedding screen calls `check_contradiction` through this server
-instead of computing cosine similarity in-process directly.
+backend.mcp_world_bible_client (see that module's docstring for why). This
+is the one genuinely load-bearing MCP integration in the project:
+admission_gate.py's stage-1 embedding screen calls `check_contradiction`
+through this server instead of computing cosine similarity in-process
+directly.
 
 Deliberately dependency-free from the rest of backend/: this process takes
 already-computed embedding vectors as input rather than calling DashScope

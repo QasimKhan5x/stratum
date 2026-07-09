@@ -11,8 +11,8 @@ icon images into the SVG.
 Built with the `diagrams` package (Graphviz under the hood) specifically so
 the Alibaba Cloud pieces (ECS, OSS, Tablestore) can use real, official
 provider icons instead of generic boxes — see README.md's Architecture
-section and DEVPOST_SUBMISSION.md's Links section for why that credit
-matters for hackathon judging. Every node/edge below mirrors the real
+section for why that credit matters for hackathon judging. Every node/edge
+below mirrors the real
 backend layout (verified against backend/main.py, orchestrator.py,
 negotiation.py, admission_gate.py, world_bible.py, cloud_storage.py,
 mcp_world_bible_server.py/_client.py, models_client.py, agents/*.py);

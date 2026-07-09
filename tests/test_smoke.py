@@ -8,11 +8,10 @@ client = TestClient(app)
 
 
 def test_import_and_replay_run():
-    """POST /api/runs/import (see scripts/save_demo_run.py and
-    stratum-demo-and-verification.md's pre-generate-and-replay fallback)
-    should reconstruct a run from exported events well enough that both
-    /api/world and a replay of /api/stream see the same state a live run
-    would have produced.
+    """POST /api/runs/import (see scripts/save_demo_run.py's
+    pre-generate-and-replay fallback) should reconstruct a run from
+    exported events well enough that both /api/world and a replay of
+    /api/stream see the same state a live run would have produced.
     """
     entry = {
         "id": "seed-00-test",

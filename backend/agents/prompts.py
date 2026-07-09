@@ -5,12 +5,9 @@ citation/output discipline, and JSON contract, not any specific world. The
 premise itself (e.g. "Tideglass Reach") is only ever injected at runtime, in
 the user message the SeedAgent and baseline agent receive — see
 backend/agents/seed.py and backend/agents/baseline.py. This keeps every
-prompt reusable across any premise a user submits, matching the project
-overview's positioning of the negotiation protocol as "a reusable pattern
-... not something specific to game worlds."
-
-See stratum-project-overview.md's "four agents and negotiation protocol"
-section for the mandates these are adapted from.
+prompt reusable across any premise a user submits: the negotiation
+protocol itself is a reusable pattern, not something specific to game
+worlds.
 """
 
 _JSON_DISCIPLINE = (
